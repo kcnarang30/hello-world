@@ -1,0 +1,471 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TechSparks Scroll Intro</title>
+<style>
+  :root {
+    --bg: #070708;
+    --red: #e3262f;
+    --red-deep: #5a0a10;
+    --text: #f4f1ee;
+    --muted: #8d8a87;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { background: var(--bg); color: var(--text); overflow-x: hidden; }
+  body { font-family: "Inter", "Helvetica Neue", Arial, sans-serif; }
+
+  /* ───────── Scroll section ─────────
+     .intro is tall; .stage is pinned by ScrollTrigger while you scroll through it.
+     Change the height to make the whole animation faster/slower. */
+  .intro { position: relative; height: 600vh; }
+
+  .stage {
+    position: relative;
+    width: 100%;
+    height: 100vh;
+    overflow: hidden;
+    background:
+      radial-gradient(ellipse 70% 55% at 50% 42%, rgba(120, 14, 22, .28), transparent 70%),
+      radial-gradient(ellipse 120% 60% at 50% 110%, rgba(0,0,0,.9), transparent 60%),
+      var(--bg);
+  }
+
+  /* 3D layer — all panels live here. perspective = "camera lens". */
+  .scene {
+    position: absolute;
+    inset: 0;
+    perspective: 1000px;
+    perspective-origin: 50% 45%;
+    transform-style: preserve-3d;
+  }
+
+  /* Every panel/hero is centred on the stage; JS moves it with translate3d. */
+  .panel, .hero {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform-style: preserve-3d;
+    will-change: transform, opacity;
+    backface-visibility: hidden;
+    overflow: hidden;
+    border-radius: 6px;
+    background: #111;
+    box-shadow: 0 30px 60px rgba(0,0,0,.55);
+    outline: 1px solid rgba(255,255,255,.08);
+  }
+  .panel img, .hero img {
+    width: 100%; height: 100%; object-fit: cover; display: block;
+  }
+  /* Darkening layer driven by depth (farther = darker). */
+  .shade {
+    position: absolute; inset: 0;
+    background: #000;
+    pointer-events: none;
+    opacity: 0;
+  }
+
+  /* ───────── Placeholder artwork (delete once real images are in) ───────── */
+  .ph {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column; justify-content: space-between;
+    padding: 6%;
+    background:
+      radial-gradient(ellipse 80% 60% at 50% 0%, rgba(255,60,60,.45), transparent 60%),
+      linear-gradient(180deg, #3a070c 0%, #160406 70%, #0a0203 100%);
+    container-type: inline-size;
+  }
+  .ph::after { /* faux crowd silhouette */
+    content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 28%;
+    background:
+      radial-gradient(circle at 6% 100%, #050101 18%, transparent 19%) 0 0/9% 100% repeat-x,
+      linear-gradient(#0000, #050101 70%);
+  }
+  .ph__tag {
+    font: 600 max(9px, 4.2cqi)/1 ui-monospace, Menlo, monospace;
+    letter-spacing: .12em; color: rgba(255,255,255,.65);
+  }
+  .ph__title {
+    position: relative; z-index: 1;
+    font-weight: 800; font-size: 11cqi; line-height: .95;
+    text-transform: uppercase; letter-spacing: -.01em;
+  }
+  .hero .ph {
+    background:
+      radial-gradient(ellipse 60% 45% at 50% 40%, rgba(255,70,70,.55), transparent 65%),
+      linear-gradient(180deg, #4a070d 0%, #1b0406 65%, #070102 100%);
+    align-items: center; justify-content: center; text-align: center;
+  }
+  .hero .ph__tag { position: absolute; top: 6%; }
+  .hero .ph__title { font-size: 12cqi; margin-top: -14%; }
+  .hero .ph::after { height: 22%; }
+
+  /* ───────── Character (2D overlay, always in front of the panels) ───────── */
+  .character {
+    position: absolute;
+    left: 50%;
+    bottom: -3vh;
+    height: min(50vh, 540px);
+    aspect-ratio: 200 / 400;
+    transform: translateX(-50%);
+    transform-origin: 50% 100%;
+    will-change: transform;
+    z-index: 5;
+    pointer-events: none;
+    filter: drop-shadow(0 0 24px rgba(0,0,0,.8));
+  }
+  .character svg, .character img { width: 100%; height: 100%; display: block; }
+
+  /* Ground shadow under the character */
+  .floor-glow {
+    position: absolute; left: 50%; bottom: -8vh; width: 70vw; height: 22vh;
+    transform: translateX(-50%);
+    background: radial-gradient(ellipse at center, rgba(0,0,0,.85), transparent 70%);
+    z-index: 4; pointer-events: none;
+  }
+
+  .scroll-hint {
+    position: absolute; left: 50%; top: 5vh; transform: translateX(-50%);
+    font: 500 11px/1 ui-monospace, Menlo, monospace; letter-spacing: .3em;
+    color: var(--muted); text-transform: uppercase; z-index: 6;
+  }
+
+  /* ───────── Content after the intro (just to show the hand-off) ───────── */
+  .after {
+    min-height: 80vh; display: grid; place-items: center; text-align: center;
+    padding: 10vh 16px; background: var(--bg);
+  }
+  .after h2 { font-size: clamp(28px, 4vw, 56px); letter-spacing: -.02em; }
+  .after p { color: var(--muted); margin-top: 12px; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .intro { height: 100vh; }
+  }
+</style>
+</head>
+<body>
+
+<section class="intro" id="intro">
+  <div class="stage" id="stage">
+    <div class="scene" id="scene">
+      <!-- Panels + hero are generated from the PANELS / HERO config in the script below. -->
+    </div>
+
+    <div class="floor-glow"></div>
+
+    <!-- ─────────────────────────────────────────────────────────────
+         CHARACTER
+         REPLACE: swap the inline <svg> below for your real asset, e.g.
+           <img src="assets/character-back.png" alt="">
+         (A transparent PNG/WebP of the person seen from behind works best.)
+         If you use an <img>, the leg/arm walk cycle is skipped automatically;
+         the walking bob + scale still apply to the whole element.
+         ───────────────────────────────────────────────────────────── -->
+    <div class="character" id="character" aria-hidden="true">
+      <svg viewBox="0 0 200 400" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <linearGradient id="rim" x1="0" x2="1">
+            <stop offset="0" stop-color="#3a1215"/>
+            <stop offset=".18" stop-color="#121214"/>
+            <stop offset=".82" stop-color="#121214"/>
+            <stop offset="1" stop-color="#3a1215"/>
+          </linearGradient>
+        </defs>
+        <!-- legs (animated) -->
+        <g id="legL"><rect x="66" y="250" width="30" height="150" rx="10" fill="#0d0d0f"/></g>
+        <g id="legR"><rect x="104" y="250" width="30" height="150" rx="10" fill="#0d0d0f"/></g>
+        <!-- arms (animated) -->
+        <g id="armL"><rect x="28" y="125" width="26" height="130" rx="13" fill="url(#rim)"/></g>
+        <g id="armR"><rect x="146" y="125" width="26" height="130" rx="13" fill="url(#rim)"/></g>
+        <!-- hoodie torso -->
+        <path d="M40 140 Q42 108 78 102 L122 102 Q158 108 160 140 L164 270 Q100 284 36 270 Z" fill="url(#rim)"/>
+        <!-- head / hair -->
+        <ellipse cx="100" cy="94" rx="20" ry="10" fill="#0b0b0c"/>
+        <circle cx="100" cy="62" r="30" fill="#101012"/>
+        <path d="M71 58 Q74 28 100 28 Q128 28 130 58 Q118 46 100 46 Q82 46 71 58 Z" fill="#070708"/>
+        <!-- backpack -->
+        <rect x="60" y="128" width="80" height="112" rx="16" fill="#18181b" stroke="#26262a" stroke-width="2"/>
+        <rect x="72" y="176" width="56" height="40" rx="8" fill="#141416" stroke="#2a2a2e" stroke-width="2"/>
+        <path d="M74 182 L126 182" stroke="#3a3a3f" stroke-width="2"/>
+        <path d="M70 128 Q62 112 68 104 M130 128 Q138 112 132 104" stroke="#1f1f22" stroke-width="7" fill="none" stroke-linecap="round"/>
+      </svg>
+    </div>
+
+    <div class="scroll-hint" id="hint">Scroll</div>
+  </div>
+</section>
+
+<section class="after">
+  <div>
+    <h2>Rest of the page continues here</h2>
+    <p>Scroll back up to reverse the intro.</p>
+  </div>
+</section>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js"></script>
+<script>
+/* ════════════════════════════════════════════════════════════════════
+   CONFIG — this is the only part you normally need to touch.
+
+   Panels are placed in polar coordinates around the character (top view):
+     angle  0°  = straight behind him (far from camera)
+     angle -90° = directly to his left, +90° = directly to his right
+     r      = distance from the character, in multiples of the scene radius
+     y      = vertical offset, as a fraction of viewport height (negative = up)
+   Each key is a list of values at the progress STOPS below. The script
+   interpolates them with a smooth spline, which produces the curved orbit.
+   ════════════════════════════════════════════════════════════════════ */
+
+//            start  orbit  converge  reveal
+const STOPS = [0,    0.32,  0.56,     0.78];
+
+const PANELS = [
+  {
+    id: 'IMAGE 01',
+    title: 'Speakers',
+    src: null,          // ← REPLACE with 'assets/image-01.jpg'
+    size: 1.1,          // relative panel size
+    mobile: true,       // keep on small screens?
+    angle:  [-50, -104, -56, -34],
+    r:      [1.0, 0.8, 1.55, 2.2],
+    y:      [-.10, -.12, -.14, -.12],
+    opacity:[1,   1,    1,    0],
+  },
+  {
+    id: 'IMAGE 02',
+    title: 'Stage',
+    src: null,          // ← REPLACE with 'assets/image-02.jpg'
+    size: .85,
+    mobile: false,
+    angle:  [-22, -56, -32, -14],
+    r:      [1.35, 1.0, 1.9, 2.5],
+    y:      [-.08, -.10, -.16, -.14],
+    opacity:[1,   1,    .9,   0],
+  },
+  {
+    id: 'IMAGE 03',
+    title: 'Keynote',
+    src: null,          // ← REPLACE with 'assets/image-03.jpg'
+    size: .8,
+    mobile: true,
+    angle:  [20, 54, 32, 14],
+    r:      [1.3, 1.0, 1.9, 2.5],
+    y:      [-.12, -.10, -.16, -.14],
+    opacity:[1,   1,    .9,   0],
+  },
+  {
+    id: 'IMAGE 04',
+    title: 'Ideas People Founders',
+    src: null,          // ← REPLACE with 'assets/image-04.jpg'
+    size: 1.05,
+    mobile: true,
+    angle:  [50, 104, 56, 34],
+    r:      [0.95, 0.8, 1.55, 2.2],
+    y:      [-.10, -.12, -.14, -.12],
+    opacity:[1,   1,    1,    0],
+  },
+  {
+    id: 'IMAGE 05',
+    title: 'Crowd',
+    src: null,          // ← REPLACE with 'assets/image-05.jpg'
+    size: .7,
+    mobile: false,
+    // the far panel drifts across the back, then joins the left of the arc
+    angle:  [10, -12, -62, -44],
+    r:      [2.1, 1.7, 1.8, 2.5],
+    y:      [-.24, -.20, -.20, -.16],
+    opacity:[.9,  1,    .9,   0],
+  },
+];
+
+// The central image that grows into the full-screen hero.
+const HERO = {
+  id: 'MAIN HERO IMAGE',
+  title: 'TechSparks',
+  src: null,            // ← REPLACE with 'assets/techsparks-hero.jpg'
+};
+
+/* ════════════════════════════════════════════════════════════════════
+   Implementation
+   ════════════════════════════════════════════════════════════════════ */
+gsap.registerPlugin(ScrollTrigger);
+
+const scene = document.getElementById('scene');
+const character = document.getElementById('character');
+const hint = document.getElementById('hint');
+const PERSPECTIVE = 1000;
+
+function makeCard(cls, data) {
+  const el = document.createElement('div');
+  el.className = cls;
+  el.innerHTML = data.src
+    ? `<img src="${data.src}" alt="">`
+    : `<div class="ph"><span class="ph__tag">${data.id}</span><span class="ph__title">${data.title}</span></div>`;
+  const shade = document.createElement('div');
+  shade.className = 'shade';
+  el.appendChild(shade);
+  scene.appendChild(el);
+  return { el, shade };
+}
+
+const heroCard = makeCard('hero', HERO);
+const panelCards = PANELS.map(cfg => ({ cfg, ...makeCard('panel', cfg) }));
+
+// ── math helpers ──
+const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
+const lerp = (a, b, t) => a + (b - a) * t;
+const range = (p, a, b) => clamp((p - a) / (b - a));
+const easeInOut = t => t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+const easeOut = t => 1 - Math.pow(1 - t, 3);
+const DEG = Math.PI / 180;
+
+// Catmull-Rom spline through keyframe values → smooth, continuous motion (no stop/start at stops).
+function spline(values, p) {
+  const n = STOPS.length;
+  if (p <= STOPS[0]) return values[0];
+  if (p >= STOPS[n - 1]) return values[n - 1];
+  let i = 0;
+  while (p > STOPS[i + 1]) i++;
+  const t = (p - STOPS[i]) / (STOPS[i + 1] - STOPS[i]);
+  const p0 = values[Math.max(i - 1, 0)], p1 = values[i];
+  const p2 = values[i + 1], p3 = values[Math.min(i + 2, n - 1)];
+  const t2 = t * t, t3 = t2 * t;
+  return 0.5 * ((2 * p1) + (-p0 + p2) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t2 + (-p0 + 3 * p1 - 3 * p2 + p3) * t3);
+}
+
+// ── layout values that depend on viewport size ──
+let L = {};
+function measure() {
+  const vw = window.innerWidth, vh = window.innerHeight;
+  const mobile = vw < 720;
+  L = {
+    vw, vh, mobile,
+    R: mobile ? vw * 0.62 : Math.min(vw * 0.5, 900),     // scene radius
+    W: mobile ? Math.max(vw * 0.42, 150) : Math.min(Math.max(vw * 0.22, 220), 420), // base panel width
+    charZ: 160,                                              // character depth in front of the scene
+  };
+  panelCards.forEach(c => {
+    c.el.style.display = (mobile && !c.cfg.mobile) ? 'none' : '';
+    c.el.style.width = `${L.W * c.cfg.size}px`;
+    c.el.style.height = `${L.W * c.cfg.size * 0.62}px`;
+  });
+}
+
+// ── walking character ──
+const isSvgCharacter = !!character.querySelector('svg');
+const limbs = isSvgCharacter ? {
+  legL: document.getElementById('legL'), legR: document.getElementById('legR'),
+  armL: document.getElementById('armL'), armR: document.getElementById('armR'),
+} : null;
+
+function renderCharacter(p) {
+  const walk = clamp(p / 0.86);                 // stops walking as the hero settles
+  const phase = walk * Math.PI * 2 * 9;         // 9 strides over the walk
+  const stride = 1 - range(p, 0.78, 0.88);      // stride amplitude fades out at the end
+  const bob = Math.abs(Math.sin(phase)) * -6 * stride;
+
+  const reveal = easeInOut(range(p, 0.6, 0.9));
+  const scale = lerp(1, 0.8, reveal);
+  const drop = lerp(0, 6, reveal);              // vh
+  character.style.transform =
+    `translateX(-50%) translateY(calc(${bob}px + ${drop}vh)) scale(${scale})`;
+
+  if (limbs) {
+    const s = Math.sin(phase) * stride;
+    limbs.legL.setAttribute('transform', `translate(0 ${Math.max(0, s) * -14}) scale(1 ${1 - Math.max(0, s) * .06})`);
+    limbs.legR.setAttribute('transform', `translate(0 ${Math.max(0, -s) * -14}) scale(1 ${1 - Math.max(0, -s) * .06})`);
+    limbs.armL.setAttribute('transform', `rotate(${s * 5} 41 130)`);
+    limbs.armR.setAttribute('transform', `rotate(${s * 5} 159 130)`);
+  }
+}
+
+// ── panels ──
+function renderPanels(p) {
+  const { R, vh, charZ } = L;
+  panelCards.forEach(({ cfg, el, shade }) => {
+    const a = spline(cfg.angle, p) * DEG;
+    const r = spline(cfg.r, p) * R;
+    const y = spline(cfg.y, p) * vh;
+    const op = clamp(spline(cfg.opacity, p));
+
+    // polar (top view) → camera space. Character sits at z = -charZ.
+    const x = Math.sin(a) * r;
+    const z = -charZ - Math.cos(a) * r * 0.9;
+    // Panels turn to face the character (controlled, never a full spin).
+    const rotY = clamp(-a / DEG * 0.75, -70, 70);
+
+    el.style.transform =
+      `translate(-50%, -50%) translate3d(${x.toFixed(1)}px, ${y.toFixed(1)}px, ${z.toFixed(1)}px) rotateY(${rotY.toFixed(2)}deg)`;
+    el.style.opacity = op.toFixed(3);
+    el.style.visibility = op < 0.01 ? 'hidden' : 'visible';
+    // depth shading: farther panels are darker
+    shade.style.opacity = clamp((-z - 300) / 2400, 0, 0.55).toFixed(3);
+  });
+}
+
+// ── hero: far small panel → dominant centre → full screen ──
+function renderHero(p) {
+  const { R, W, vw, vh, charZ } = L;
+  const startW = W * 1.25;
+
+  // 0 → 0.56: approaches slowly from far behind, becomes dominant
+  const approach = easeInOut(range(p, 0, 0.56));
+  // 0.56 → 0.9: camera pushes in, image grows to fill the screen
+  const push = easeInOut(range(p, 0.5, 0.9));
+
+  const zFar  = lerp(-charZ - R * 2.9, -charZ - R * 1.7, approach);
+  const z     = lerp(zFar, 0, push);
+  const w     = lerp(lerp(startW, startW * 1.5, approach), vw, push);
+  const h     = lerp(lerp(startW * 0.56, startW * 1.5 * 0.56, approach), vh, push);
+  const y     = lerp(-0.16 * vh, 0, push);
+  const radius = lerp(6, 0, push);
+
+  const el = heroCard.el;
+  el.style.width = `${w.toFixed(1)}px`;
+  el.style.height = `${h.toFixed(1)}px`;
+  el.style.borderRadius = `${radius}px`;
+  el.style.transform = `translate(-50%, -50%) translate3d(0, ${y.toFixed(1)}px, ${z.toFixed(1)}px)`;
+  heroCard.shade.style.opacity = lerp(0.45, 0, easeOut(range(p, 0.1, 0.7))).toFixed(3);
+}
+
+// ── subtle camera drift ──
+function renderCamera(p) {
+  const drift = Math.sin(p * Math.PI) * (1 - range(p, 0.6, 0.9));
+  scene.style.perspectiveOrigin = `${50 + drift * 3}% ${45 - drift * 2}%`;
+  hint.style.opacity = (1 - range(p, 0, 0.05)).toFixed(2);
+}
+
+const state = { p: 0 };
+function render() {
+  const p = state.p;
+  renderCamera(p);
+  renderPanels(p);
+  renderHero(p);
+  renderCharacter(p);
+}
+
+measure();
+render();
+
+// Timeline 0→1 is the full sequence; 0.9→1 is the "hold" on the final hero frame.
+gsap.to(state, {
+  p: 1,
+  ease: 'none',
+  onUpdate: render,
+  scrollTrigger: {
+    trigger: '#intro',
+    start: 'top top',
+    end: 'bottom bottom',
+    pin: '#stage',
+    pinSpacing: false,
+    scrub: 1,             // smoothing (seconds); 0/true = locked to scroll
+    invalidateOnRefresh: true,
+  },
+});
+
+window.addEventListener('resize', () => { measure(); render(); });
+</script>
+</body>
+</html>
