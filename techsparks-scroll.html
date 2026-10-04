@@ -139,30 +139,58 @@
   .line { display: block; overflow: hidden; padding-bottom: .06em; }
   .line > span { display: block; will-change: transform; }
 
-  /* ───────── Character (2D overlay, always in front) ───────── */
+  /* ───────── Character (2D overlay, always in front) ─────────
+     A figure in the shadows: crushed to a near-black silhouette, lit only from
+     behind (thin rim light + a haze of light beyond him), with a faint
+     reflection on the wet floor. */
   .character {
-    position: absolute; left: 50%; bottom: -4vh; z-index: 5;
-    height: min(54vh, 560px); aspect-ratio: 220 / 440;
+    position: absolute; left: 50%; bottom: 9vh; z-index: 5;
+    height: min(50vh, 520px); aspect-ratio: var(--aspect, .34);
     transform-origin: 50% 100%;
     will-change: transform;
     pointer-events: none;
   }
-  .character svg, .character img { width: 100%; height: 100%; }
-  .character img { object-fit: contain; object-position: 50% 100%; }
-  /* Photo cutout: grade it into the scene — darker, cooler, with the stage's blue/red rim light */
-  .character.is-photo img {
-    filter:
-      brightness(.6) contrast(1.15) saturate(.7)
-      drop-shadow(-1.5px 0 1.5px rgba(90, 110, 255, .45))
-      drop-shadow(1.5px 0 1.5px rgba(255, 60, 70, .4))
-      drop-shadow(0 24px 30px rgba(0, 0, 0, .75));
+  .character .sprite {
+    position: absolute; inset: 0;
+    background-repeat: no-repeat;
+    background-size: calc(var(--frames, 1) * 100%) 100%;
   }
-  .character.is-photo svg { display: none; }
-  .character:not(.is-photo) img { display: none; }
-  .floor-shadow {
-    position: absolute; left: 50%; bottom: -9vh; z-index: 4;
-    width: min(60vw, 760px); height: 24vh; transform: translateX(-50%);
-    background: radial-gradient(ellipse at center, rgba(0,0,0,.9), transparent 68%);
+  /* silhouette is pure black; only the rim light (light from beyond him) reveals the edge */
+  .character .figure {
+    filter:
+      drop-shadow(-1px 0 .6px rgba(150, 175, 255, .6))
+      drop-shadow(1px 0 .6px rgba(255, 150, 120, .55))
+      drop-shadow(0 -1px .8px rgba(255, 235, 220, .4))
+      drop-shadow(0 0 16px rgba(255, 190, 170, .14));
+  }
+  .character .backlight {
+    position: absolute; left: 50%; top: 2%; width: 340%; aspect-ratio: 1.15;
+    transform: translateX(-50%);
+    background:
+      radial-gradient(ellipse 22% 30% at 50% 40%, rgba(255, 230, 215, .2), transparent 70%),
+      radial-gradient(ellipse 50% 50% at 42% 45%, rgba(110, 130, 255, .14), transparent 70%),
+      radial-gradient(ellipse 50% 50% at 58% 45%, rgba(255, 70, 80, .14), transparent 70%);
+    filter: blur(6px);
+  }
+  /* wet-floor reflection */
+  .character .reflection { /* wet-floor reflection */
+    top: 100%; bottom: auto; height: 100%;
+    transform: scaleY(-1); transform-origin: 50% 0;
+    opacity: .6;
+    filter: blur(1.5px) drop-shadow(-1px 0 .5px rgba(150, 175, 255, .45)) drop-shadow(1px 0 .5px rgba(255, 150, 120, .4));
+    -webkit-mask-image: linear-gradient(to top, rgba(0,0,0,.85), transparent 30%);
+            mask-image: linear-gradient(to top, rgba(0,0,0,.85), transparent 30%);
+  }
+  .floor-shadow { /* wet floor: a pool of light at his feet so the dark reflection reads */
+    position: absolute; left: 50%; bottom: 0; z-index: 4;
+    width: 120vw; height: 34vh; transform: translateX(-50%);
+    transform-origin: 50% 74%;
+    background:
+      radial-gradient(ellipse 9% 30% at 50% 74%, rgba(255, 225, 210, .22), transparent 75%),
+      radial-gradient(ellipse 26% 22% at 50% 72%, rgba(255, 190, 175, .13), transparent 75%),
+      radial-gradient(ellipse 30% 20% at 44% 74%, rgba(110, 130, 255, .1), transparent 75%),
+      radial-gradient(ellipse 30% 20% at 56% 74%, rgba(255, 70, 80, .1), transparent 75%);
+    will-change: opacity, transform;
     pointer-events: none;
   }
 
@@ -223,7 +251,7 @@
     .chapters li:not(.is-active) { display: none; }
     .topbar .cta { display: none; }
     .intro-title { top: 13vh; padding: 0 16px; }
-    .character { height: 46vh; }
+    .character { height: 42vh; bottom: 12vh; }
   }
   @media (prefers-reduced-motion: reduce) {
     .grain { animation: none; }
@@ -271,70 +299,17 @@
     <div class="floor-shadow"></div>
 
     <!-- ─────────────────────────────────────────────────────────────
-         CHARACTER
-         REPLACE: drop a transparent PNG of the person seen from behind at
-           assets/character.png
-         and it is used automatically (graded + rim-lit to sit in the scene).
-         Until that file exists, the drawn SVG figure below is the fallback.
-         A photo can't swing its legs, so it gets a walking bob + sway instead.
+         CHARACTER — a hooded figure walking away from camera, in the shadows.
+         The walk is a sprite sheet: 24 frames side by side, rendered from a
+         rigged 3D human (see tools/character/). The scroll steps through the
+         frames, so his stride follows the scroll exactly.
+         REPLACE: set CHARACTER.src / frames in the script (a single PNG works
+         too: frames: 1). Look is in the .figure / .backlight / .reflection CSS.
          ───────────────────────────────────────────────────────────── -->
     <div class="character" id="character" aria-hidden="true">
-      <img id="characterPhoto" src="assets/character.png" alt="" draggable="false">
-      <svg viewBox="0 0 220 440" xmlns="http://www.w3.org/2000/svg">
-        <defs>
-          <!-- rim light: blue from the left, red from the right (matches the stage glow) -->
-          <linearGradient id="rimBody" x1="0" x2="1">
-            <stop offset="0" stop-color="#2a3170"/>
-            <stop offset=".12" stop-color="#121218"/>
-            <stop offset=".86" stop-color="#121216"/>
-            <stop offset="1" stop-color="#6e1a22"/>
-          </linearGradient>
-          <linearGradient id="rimLeg" x1="0" x2="1">
-            <stop offset="0" stop-color="#1d2250"/>
-            <stop offset=".25" stop-color="#0c0c10"/>
-            <stop offset=".8" stop-color="#0c0c10"/>
-            <stop offset="1" stop-color="#4a1218"/>
-          </linearGradient>
-          <linearGradient id="pack" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0" stop-color="#22222a"/>
-            <stop offset="1" stop-color="#121216"/>
-          </linearGradient>
-          <radialGradient id="hair" cx=".5" cy=".35" r=".7">
-            <stop offset="0" stop-color="#1b1b20"/>
-            <stop offset="1" stop-color="#08080a"/>
-          </radialGradient>
-        </defs>
-        <!-- legs -->
-        <g id="legL">
-          <path d="M80 268 L106 268 L104 404 Q93 410 82 404 Z" fill="url(#rimLeg)"/>
-          <path d="M76 400 Q92 394 108 400 L108 414 Q92 420 74 414 Z" fill="#1a1a1f"/>
-          <path d="M75 412 Q92 418 108 412 L108 418 Q92 424 75 418 Z" fill="#c9c7c2" opacity=".75"/>
-        </g>
-        <g id="legR">
-          <path d="M114 268 L140 268 L138 404 Q127 410 116 404 Z" fill="url(#rimLeg)"/>
-          <path d="M112 400 Q128 394 144 400 L146 414 Q128 420 112 414 Z" fill="#1a1a1f"/>
-          <path d="M112 412 Q128 418 146 412 L146 418 Q128 424 112 418 Z" fill="#c9c7c2" opacity=".75"/>
-        </g>
-        <!-- arms -->
-        <g id="armL"><path d="M50 128 Q38 132 36 160 L32 252 Q34 266 46 266 Q56 264 58 252 L64 160 Z" fill="url(#rimBody)"/></g>
-        <g id="armR"><path d="M170 128 Q182 132 184 160 L188 252 Q186 266 174 266 Q164 264 162 252 L156 160 Z" fill="url(#rimBody)"/></g>
-        <!-- hoodie torso -->
-        <path d="M52 130 Q56 104 92 98 L128 98 Q164 104 168 130 L172 278 Q110 292 48 278 Z" fill="url(#rimBody)"/>
-        <path d="M84 98 Q110 120 136 98 Q132 112 110 116 Q88 112 84 98 Z" fill="#0b0b0e"/>
-        <!-- head -->
-        <rect x="98" y="78" width="24" height="22" rx="8" fill="#141418"/>
-        <ellipse cx="110" cy="56" rx="29" ry="33" fill="url(#hair)"/>
-        <path d="M82 50 Q84 22 110 22 Q138 22 139 50 Q130 36 110 36 Q90 36 82 50 Z" fill="#050506"/>
-        <ellipse cx="81" cy="60" rx="4" ry="8" fill="#16161b"/>
-        <ellipse cx="139" cy="60" rx="4" ry="8" fill="#1c1418"/>
-        <!-- backpack -->
-        <path d="M78 114 Q76 104 88 104 L132 104 Q144 104 142 114" stroke="#1a1a20" stroke-width="7" fill="none" stroke-linecap="round"/>
-        <rect x="68" y="122" width="84" height="122" rx="20" fill="url(#pack)"/>
-        <rect x="68" y="122" width="84" height="122" rx="20" fill="none" stroke="rgba(255,255,255,.07)" stroke-width="1.5"/>
-        <rect x="80" y="178" width="60" height="48" rx="10" fill="#17171c" stroke="rgba(255,255,255,.06)" stroke-width="1.5"/>
-        <path d="M86 186 L134 186" stroke="rgba(255,255,255,.12)" stroke-width="1.5"/>
-        <path d="M108 132 L112 132" stroke="#c9c7c2" stroke-width="3" stroke-linecap="round" opacity=".5"/>
-      </svg>
+      <div class="backlight"></div>
+      <div class="sprite reflection"></div>
+      <div class="sprite figure"></div>
     </div>
 
     <div class="intro-title" id="introTitle">
@@ -584,31 +559,36 @@ function renderCopy(p) {
   });
 }
 
-// walking character
-let limbs = { legL: $('legL'), legR: $('legR'), armL: $('armL'), armR: $('armR') };
-const charPhoto = $('characterPhoto');
-const usePhoto = () => { character.classList.add('is-photo'); limbs = null; queueMicrotask(render); };
-if (charPhoto.complete && charPhoto.naturalWidth) usePhoto();
-else charPhoto.addEventListener('load', usePhoto, { once: true });
+// walking character (sprite-sheet walk cycle)
+const CHARACTER = {
+  src: 'assets/character-walk.webp',   // ← REPLACE with your own sprite sheet / PNG
+  frames: 24,                          // frames laid out left → right
+  aspect: 393 / 1158,                  // one frame's width / height
+  strides: 10,                         // walk cycles over the whole scroll
+};
+const sprites = [...character.querySelectorAll('.sprite')];
+character.style.setProperty('--aspect', CHARACTER.aspect);
+character.style.setProperty('--frames', CHARACTER.frames);
+sprites.forEach(el => (el.style.backgroundImage = `url("${CHARACTER.src}")`));
+const floor = document.querySelector('.floor-shadow');
+let lastFrame = -1;
 function renderCharacter(p) {
   const push = ease.inOut(range(p, T.push));
-  const walking = 1 - smooth(0.9, 0.95, p);
-  const phase = p * Math.PI * 2 * 11;
-  const s = Math.sin(phase) * walking;
-  const bob = -Math.abs(s) * 5;
-  const scale = lerp(1, 0.6, push);
-  const rise = lerp(0, -5, push); // vh — walking away, feet move toward the horizon
-  const sway = limbs ? 0 : s * 0.8;   // photo cutout: subtle weight shift instead of leg swing
-  character.style.transform =
-    `translateX(-50%) translate3d(0,calc(${bob.toFixed(2)}px + ${rise.toFixed(2)}vh),0) rotate(${sway.toFixed(3)}deg) scale(${scale.toFixed(4)})`;
-  character.style.opacity = clamp(introK * 2).toFixed(3);
-  if (limbs) {
-    const up = v => Math.max(0, v);
-    limbs.legL.setAttribute('transform', `translate(0 ${(-up(s) * 12).toFixed(2)}) `);
-    limbs.legR.setAttribute('transform', `translate(0 ${(-up(-s) * 12).toFixed(2)})`);
-    limbs.armL.setAttribute('transform', `rotate(${(s * 4).toFixed(2)} 50 132)`);
-    limbs.armR.setAttribute('transform', `rotate(${(s * 4).toFixed(2)} 170 132)`);
+  const scale = lerp(1, 0.55, push);
+  const rise = lerp(0, 2, push); // vh — settles low so he never covers the headline
+  // stride follows the scroll; he comes to rest as the hero settles
+  const walkP = Math.min(p, 0.93) * CHARACTER.strides;
+  const frame = Math.floor((walkP % 1) * CHARACTER.frames) % CHARACTER.frames;
+  if (frame !== lastFrame) {
+    const x = CHARACTER.frames > 1 ? (frame / (CHARACTER.frames - 1)) * 100 : 0;
+    sprites.forEach(el => (el.style.backgroundPosition = `${x}% 0`));
+    lastFrame = frame;
   }
+  character.style.transform =
+    `translateX(-50%) translate3d(0,${rise.toFixed(2)}vh,0) scale(${scale.toFixed(4)})`;
+  character.style.opacity = clamp(introK * 2).toFixed(3);
+  floor.style.opacity = (clamp(introK * 2) * lerp(1, 0.55, push)).toFixed(3);
+  floor.style.transform = `translateX(-50%) translate3d(0,${(rise * 0.6).toFixed(2)}vh,0) scale(${scale.toFixed(4)})`;
 }
 
 // atmosphere, camera drift, HUD
@@ -664,7 +644,8 @@ gsap.to(state, {
 addEventListener('resize', () => { measure(); render(); });
 
 // ── preload images, then play the entrance ──
-const imgs = [...document.images].filter(img => img.id !== 'characterPhoto');
+const imgs = [...document.images];
+{ const sp = new Image(); sp.src = CHARACTER.src; imgs.push(sp); }
 let loaded = 0;
 const tick = () => { $('loadCount').textContent = `${Math.round(++loaded / imgs.length * 100)}%`; };
 Promise.all(imgs.map(img => (img.complete ? Promise.resolve() : new Promise(r => { img.onload = img.onerror = r; })).then(tick)))
