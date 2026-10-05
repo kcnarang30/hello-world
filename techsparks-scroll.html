@@ -107,12 +107,14 @@
     filter: blur(1px);
   }
 
-  /* 3D layer: perspective is the "camera lens" */
-  .scene {
-    position: absolute; inset: 0;
-    perspective: 1100px;
-    perspective-origin: 50% 42%;
-    transform-style: preserve-3d;
+  /* Photo layer. No shared 3D context: the script projects every panel itself and
+     hands the browser flat layers + an explicit stacking order (no depth-sorting
+     or plane-splitting by the browser, which caused flicker/stutter). */
+  .scene { position: absolute; inset: 0; z-index: 3; isolation: isolate; }
+  /* The floor is the only true 3D plane, alone in its own perspective layer */
+  .floor-wrap {
+    position: absolute; inset: 0; pointer-events: none; overflow: hidden;
+    perspective: 1100px; perspective-origin: 50% 42%;
   }
   /* Glossy floor plane — recedes to the vanishing point. Everything here is painted
      once; only the .floor__grid layer moves (transform), so scrolling stays smooth. */
@@ -198,7 +200,7 @@
   .character {
     position: absolute; left: 50%; bottom: 9vh; z-index: 5;
     height: min(50vh, 520px); aspect-ratio: var(--aspect, .34);
-    transform-origin: 50% 100%;
+    transform-origin: 50% var(--ground, 100%);
     will-change: transform;
     pointer-events: none;
   }
@@ -221,9 +223,8 @@
       radial-gradient(ellipse 50% 50% at 58% 45%, rgba(255, 70, 80, .12), transparent 70%);
     filter: blur(6px);
   }
-  .character .reflection {
-    top: 100%; bottom: auto; height: 100%;
-    transform: scaleY(-1.15); transform-origin: 50% 0;
+  .character .reflection { /* mirrored about his feet: same box, flipped around its bottom edge */
+    transform: scaleY(-1.15); transform-origin: 50% var(--contact, 100%);
     opacity: .7;
     filter: blur(2px);
     -webkit-mask-image: linear-gradient(to top, rgba(0,0,0,.9), transparent 34%);
@@ -238,8 +239,8 @@
   .intro-title p { font: 500 11px/1 var(--ui); letter-spacing: .34em; text-transform: uppercase; color: var(--muted); margin-bottom: 22px; }
   .intro-title h1 { font: 400 clamp(30px, 5.2vw, 84px)/1.04 var(--display); text-transform: uppercase; letter-spacing: -.01em; }
   .scroll-cue {
-    position: absolute; left: 50%; bottom: 76px; z-index: 7; transform: translateX(-50%);
-    display: flex; flex-direction: column; align-items: center; gap: 12px;
+    position: absolute; right: var(--gutter); bottom: 76px; z-index: 7;
+    display: flex; flex-direction: column; align-items: flex-end; gap: 12px;
     font: 500 10px/1 var(--ui); letter-spacing: .34em; text-transform: uppercase; color: var(--muted);
     pointer-events: none;
   }
@@ -353,8 +354,9 @@
     <div class="atmo atmo--ribs"></div>
     <div class="beam" id="beam"></div>
 
+    <div class="floor-wrap" id="floorWrap"><div class="floor" id="floor"><div class="floor__grid" id="floorGrid"></div></div></div>
+
     <div class="scene" id="scene">
-      <div class="floor" id="floor"><div class="floor__grid" id="floorGrid"></div></div>
       <!-- Photo panels are generated from PANELS in the script below. -->
 
       <!-- ─────────────────────────────────────────────────────────
@@ -505,7 +507,11 @@ const PANELS = [
 const CHARACTER = {
   src: 'assets/character-walk.webp',   // ← REPLACE with your own sprite sheet / PNG
   frames: 24,                          // frames laid out left → right
-  aspect: 393 / 1158,                  // one frame's width / height
+  aspect: 393 / 1177,                  // one frame's width / height
+  ground: 0.9592,                      // average floor line (fraction of frame height)
+  // lowest foot in each frame — the reflection mirrors about this so it always touches his feet
+  contact: [0.9320, 0.9388, 0.9465, 0.9541, 0.9609, 0.9660, 0.9762, 0.9864, 0.9983, 0.9932, 0.9703, 0.9550,
+            0.9431, 0.9371, 0.9431, 0.9499, 0.9541, 0.9635, 0.9745, 0.9839, 0.9924, 0.9805, 0.9575, 0.9422],
   strides: 10,                         // walk cycles over the whole scroll
   strideLength: 460,                   // floor travel per cycle (px at his depth)
 };
@@ -532,6 +538,8 @@ gsap.registerPlugin(ScrollTrigger);
 const $ = id => document.getElementById(id);
 const scene = $('scene'), heroEl = $('hero'), character = $('character'), floorEl = $('floor'), floorGrid = $('floorGrid');
 const FLOOR_D = 3600;
+const floorWrap = $('floorWrap');
+const O = { x: 0, y: 0 };   // camera vanishing point on screen (px), updated each frame
 const PERSPECTIVE = 1100, ORIGIN_Y = 0.42;
 
 const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
@@ -592,7 +600,8 @@ function measure() {
   L.dolly = L.charZ + L.heroR * R * 0.92;                     // distance the camera travels to reach the hero
 
   // floor height: put the plane exactly under his feet at his depth
-  const feetY = character.offsetTop + character.offsetHeight;  // px from top of the stage (ignores transforms)
+  character.style.marginBottom = `${(-(1 - CHARACTER.ground) * character.offsetHeight).toFixed(1)}px`;
+  const feetY = character.offsetTop + character.offsetHeight * CHARACTER.ground;  // ground line, px from top of the stage
   const sAtChar = PERSPECTIVE / (PERSPECTIVE + L.charZ);
   L.floorY = (feetY - ORIGIN_Y * vh) / sAtChar - (0.5 - ORIGIN_Y) * vh;
   L.floorZ = 200 - FLOOR_D / 2;                                // plane spans z = +200 … −3400
@@ -628,6 +637,15 @@ function place(angleDeg, r, y) {
   const a = angleDeg * DEG;
   return { x: Math.sin(a) * r * L.R, y, z: -L.charZ - Math.cos(a) * r * L.R * 0.92 };
 }
+// camera space → screen: offset from the element's centred anchor + scale factor
+function project(x, y, z) {
+  const k = PERSPECTIVE / (PERSPECTIVE - Math.min(z, PERSPECTIVE - 60));
+  return {
+    dx: (L.vw * 0.5 + x - O.x) * k + O.x - L.vw * 0.5,
+    dy: (L.vh * 0.5 + y - O.y) * k + O.y - L.vh * 0.5,
+    k,
+  };
+}
 const visible = angle => 1 - smooth(98, 126, Math.abs(angle));
 const nearFade = (z, push) => 1 - smooth(lerp(180, -520, push), lerp(420, -160, push), z);
 
@@ -660,12 +678,25 @@ function renderPanels(p) {
     const depth = clamp((-pos.z - 500) / 2600, 0, 0.62);   // farther = darker (via opacity over the dark stage)
     const op = visible(angle) * nearFade(pos.z, pushT) * k0 * (1 - depth * 0.8);
 
+    const pr = project(pos.x, pos.y + (1 - ease.out(k0)) * 60, pos.z);
+    pn.z = pos.z;
     const st = pn.el.style;
-    st.transform = `translate3d(${pos.x.toFixed(1)}px,${(pos.y + (1 - ease.out(k0)) * 60).toFixed(1)}px,${pos.z.toFixed(1)}px) rotateY(${ry.toFixed(2)}deg) scale(${s.toFixed(4)})`;
+    st.transform = `translate3d(${pr.dx.toFixed(2)}px,${pr.dy.toFixed(2)}px,0) scale(${(pr.k * s).toFixed(5)}) perspective(${(PERSPECTIVE - Math.min(pos.z, 900)).toFixed(0)}px) rotateY(${(ry * 0.6).toFixed(2)}deg)`;
     st.opacity = op.toFixed(3);
     const vis = op > 0.005;
     if (vis !== pn.vis) { st.visibility = vis ? 'visible' : 'hidden'; pn.vis = vis; }
   });
+}
+
+// far → near stacking, rewritten only when the order actually changes
+const stackItems = [];
+let lastOrder = '';
+function restack() {
+  stackItems.sort((a, b) => a.z - b.z);
+  const order = stackItems.map(it => it.i).join(',');
+  if (order === lastOrder) return;
+  lastOrder = order;
+  stackItems.forEach((it, idx) => (it.el.style.zIndex = idx + 1));
 }
 
 function renderHero(p) {
@@ -680,8 +711,10 @@ function renderHero(p) {
   const inset = Math.max(0, (L.vh - h / s) / 2);
   const y = lerp(pos.y, 0, push);
 
+  const pr = project(0, y, z);
+  heroItem.z = z;
   const st = heroEl.style;
-  st.transform = `translate3d(0,${y.toFixed(1)}px,${z.toFixed(1)}px) scale(${s.toFixed(5)})`;
+  st.transform = `translate3d(${pr.dx.toFixed(2)}px,${pr.dy.toFixed(2)}px,0) scale(${(pr.k * s).toFixed(5)})`;
   st.clipPath = `inset(${inset.toFixed(1)}px 0 round ${(lerp(14, 0, push) / s).toFixed(1)}px)`;
   const lit = lerp(0.5, 1, ease.out(range(p, [0.2, T.push[0] + 0.1])));
   st.opacity = (lerp(0.55, 1, approach) * lit * clamp(introK * 1.4)).toFixed(3);
@@ -713,8 +746,10 @@ function renderCopy(p) {
 
 // walking character + the floor he walks on
 const sprites = [...character.querySelectorAll('.sprite')];
+const reflection = character.querySelector('.reflection');
 character.style.setProperty('--aspect', CHARACTER.aspect);
 character.style.setProperty('--frames', CHARACTER.frames);
+character.style.setProperty('--ground', `${CHARACTER.ground * 100}%`);
 sprites.forEach(el => (el.style.backgroundImage = `url("${CHARACTER.src}")`));
 let lastFrame = -1;
 function renderCharacter(p) {
@@ -728,6 +763,7 @@ function renderCharacter(p) {
   if (frame !== lastFrame) {
     const x = CHARACTER.frames > 1 ? (frame / (CHARACTER.frames - 1)) * 100 : 0;
     sprites.forEach(el => (el.style.backgroundPosition = `${x}% 0`));
+    if (CHARACTER.contact) reflection.style.setProperty('--contact', `${(CHARACTER.contact[frame] * 100).toFixed(2)}%`);
     lastFrame = frame;
   }
   character.style.transform =
@@ -753,7 +789,8 @@ function renderWorld(p) {
   const drift = Math.sin(p * Math.PI * 1.5) * (1 - push);
   const ox = 50 + drift * 2.5 + mouse.x * 1.6 * (1 - push);
   const oy = (ORIGIN_Y * 100) - drift * 1.5 + mouse.y * 1.1 * (1 - push);
-  scene.style.perspectiveOrigin = `${ox.toFixed(3)}% ${oy.toFixed(3)}%`;
+  O.x = ox / 100 * L.vw; O.y = oy / 100 * L.vh;
+  floorWrap.style.perspectiveOrigin = `${ox.toFixed(3)}% ${oy.toFixed(3)}%`;
   aurora.style.transform = `translate3d(${(mouse.x * 10).toFixed(1)}px,${(p * 6).toFixed(2)}vh,0) scale(${1 + push * 0.3})`;
   aurora.style.opacity = (0.38 * (1 - push)).toFixed(3);
   glow.style.opacity = (1 - push * 0.8).toFixed(3);
@@ -774,6 +811,7 @@ function render() {
   renderWorld(p);
   renderPanels(p);
   renderHero(p);
+  restack();
   renderCopy(p);
   renderCharacter(p);
 }
@@ -795,6 +833,9 @@ document.querySelectorAll('a[href^="#"]').forEach(a => a.addEventListener('click
 }));
 
 measure();
+const heroItem = { el: heroEl, i: 'h', z: -1e4 };
+function rebuildStack() { stackItems.length = 0; active.forEach(pn => stackItems.push(Object.assign(pn, { z: pn.z ?? -1e4 }))); stackItems.push(heroItem); lastOrder = ''; }
+rebuildStack();
 render();
 
 gsap.to(state, {
@@ -804,7 +845,7 @@ gsap.to(state, {
     trigger: '#intro',
     start: 'top top',
     end: 'bottom bottom',
-    scrub: 0.3,            // light extra easing on top of Lenis; 0/true = locked to scroll
+    scrub: true,           // locked to the (already Lenis-smoothed) scroll position
     invalidateOnRefresh: true,
   },
 });
@@ -820,7 +861,7 @@ gsap.ticker.add((t, dt) => {
   render();
 });
 
-addEventListener('resize', () => { measure(); render(); });
+addEventListener('resize', () => { measure(); rebuildStack(); render(); });
 
 // ── after-intro reveals ──
 gsap.utils.toArray('.reveal').forEach((el, i) => {
