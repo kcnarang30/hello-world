@@ -70,9 +70,7 @@
   .atmo--aurora {
     inset: auto -10% -6% -10%; height: 70%;
     background: url("assets/hero/aurora.webp") center bottom / cover no-repeat;
-    opacity: .38;
-    -webkit-mask-image: linear-gradient(to top, #000 10%, transparent 85%);
-            mask-image: linear-gradient(to top, #000 10%, transparent 85%);
+    opacity: .38;   /* the fade-to-top is baked into the image's alpha (no CSS mask) */
     will-change: transform, opacity;
   }
   .atmo--glow {
@@ -111,32 +109,9 @@
      hands the browser flat layers + an explicit stacking order (no depth-sorting
      or plane-splitting by the browser, which caused flicker/stutter). */
   .scene { position: absolute; inset: 0; z-index: 3; isolation: isolate; }
-  /* The floor is the only true 3D plane, alone in its own perspective layer */
-  .floor-wrap {
-    position: absolute; inset: 0; pointer-events: none; overflow: hidden;
-    perspective: 1100px; perspective-origin: 50% 42%;
-  }
-  /* Glossy floor plane — recedes to the vanishing point. Everything here is painted
-     once; only the .floor__grid layer moves (transform), so scrolling stays smooth. */
-  .floor {
-    position: absolute; left: 50%; top: 50%;
-    width: 2000px; height: 3600px; margin: -1800px 0 0 -1000px;
-    pointer-events: none; will-change: transform, opacity; overflow: hidden;
-    background:
-      radial-gradient(ellipse 6% 9% at 50% var(--feet, 88%), rgba(255, 228, 214, .2), transparent 70%),
-      radial-gradient(ellipse 18% 14% at 50% var(--feet, 88%), rgba(255, 160, 150, .08), transparent 72%),
-      radial-gradient(ellipse 5% 60% at 50% 0%, rgba(255, 215, 205, .12), transparent 75%),
-      repeating-linear-gradient(90deg, rgba(255,255,255,.055) 0 2px, transparent 2px 200px);
-    -webkit-mask-image: linear-gradient(to bottom, transparent 0%, #000 32%, #000 80%, transparent 100%), linear-gradient(90deg, transparent, #000 25%, #000 75%, transparent);
-    -webkit-mask-composite: source-in;
-            mask-image: linear-gradient(to bottom, transparent 0%, #000 32%, #000 80%, transparent 100%), linear-gradient(90deg, transparent, #000 25%, #000 75%, transparent);
-            mask-composite: intersect;
-  }
-  .floor__grid { /* cross lines that slide toward the camera with his stride */
-    position: absolute; left: 0; right: 0; top: -240px; bottom: 0;
-    background: repeating-linear-gradient(0deg, rgba(255,255,255,.045) 0 2px, transparent 2px 240px);
-    will-change: transform;
-  }
+  /* The floor is drawn on a canvas each frame (a few dozen lines + two glows):
+     no giant textured layers for the browser to rasterise on high-DPI screens. */
+  .floor-canvas { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
   .card {
     position: absolute; left: 50%; top: 50%;
     border-radius: 10px;
@@ -144,7 +119,7 @@
     background: #111;
     backface-visibility: hidden;
     will-change: transform, opacity;
-    box-shadow: 0 40px 80px -20px rgba(0,0,0,.7);
+    box-shadow: 0 18px 36px -14px rgba(0,0,0,.65);
   }
   .card img { width: 100%; height: 100%; object-fit: cover; user-select: none; -webkit-user-drag: none; }
   .card:not(.hero) img { filter: saturate(.8) contrast(1.06) brightness(.94); } /* one consistent grade */
@@ -160,11 +135,18 @@
   }
 
   /* Hero card */
-  .hero { border-radius: 0; container-type: size; box-shadow: none; overflow: hidden; will-change: transform, opacity, clip-path; }
+  /* The hero card holds only the photo (screen-shaped), so scaling it is pure GPU work.
+     Its headline/grade live in .hero-overlay, which never scales — it only fades in. */
+  .hero { border-radius: 40px; box-shadow: none; overflow: hidden; }   /* ≈10px on screen at wall size */
+  .hero.is-full { border-radius: 0; }
   .hero::before { display: none; }
   .hero > img { will-change: transform; }
-  .hero::after { /* legibility + cinematic grade over the photo */
-    content: ""; position: absolute; inset: 0; z-index: 1; pointer-events: none;
+  .hero-overlay {
+    position: absolute; inset: 0; z-index: 6; container-type: size;
+    opacity: 0; visibility: hidden; pointer-events: none; will-change: opacity;
+  }
+  .hero-overlay::before { /* legibility + cinematic grade over the photo */
+    content: ""; position: absolute; inset: 0; pointer-events: none;
     background:
       linear-gradient(180deg, rgba(5,5,8,.6) 0%, rgba(5,5,8,.12) 34%, rgba(5,5,8,.3) 62%, rgba(5,5,8,.92) 100%),
       radial-gradient(ellipse at 50% 42%, transparent 35%, rgba(5,5,8,.65) 100%),
@@ -187,8 +169,8 @@
   .hero__cta { display: flex; gap: 12px; justify-content: center; margin-top: 4.5cqh; pointer-events: none; }
   .hero__cta.is-live { pointer-events: auto; }
   .hero__cta .line { padding: 2px; }
-  .hero .pill { backdrop-filter: none; -webkit-backdrop-filter: none; }
-  .hero .pill:not(.pill--solid) { background: rgba(5,5,8,.35); }
+  .hero-overlay .pill { backdrop-filter: none; -webkit-backdrop-filter: none; }
+  .hero-overlay .pill:not(.pill--solid) { background: rgba(5,5,8,.35); }
 
   /* Masked line reveal */
   .line { display: block; overflow: hidden; padding-bottom: .06em; }
@@ -204,10 +186,10 @@
     will-change: transform;
     pointer-events: none;
   }
-  .character .sprite {
-    position: absolute; inset: 0;
-    background-repeat: no-repeat;
-    background-size: calc(var(--frames, 1) * 100%) 100%;
+  .character .sprite { position: absolute; inset: 0; overflow: hidden; }
+  .character .strip { /* all frames side by side; we slide it, nothing is repainted */
+    position: absolute; left: 0; top: 0; height: 100%; width: calc(var(--frames, 1) * 100%);
+    max-width: none; will-change: transform; user-select: none; -webkit-user-drag: none;
   }
   .character .figure {
     filter:
@@ -354,7 +336,7 @@
     <div class="atmo atmo--ribs"></div>
     <div class="beam" id="beam"></div>
 
-    <div class="floor-wrap" id="floorWrap"><div class="floor" id="floor"><div class="floor__grid" id="floorGrid"></div></div></div>
+    <canvas class="floor-canvas" id="floorCanvas" aria-hidden="true"></canvas>
 
     <div class="scene" id="scene">
       <!-- Photo panels are generated from PANELS in the script below. -->
@@ -365,6 +347,11 @@
            ───────────────────────────────────────────────────────── -->
       <div class="card hero" id="hero">
         <img src="assets/hero/hero-venue.webp" alt="TechSparks venue entrance" draggable="false">
+      </div>
+    </div>
+
+    <!-- Headline + grade over the final hero frame (never scaled; fades in) -->
+    <div class="hero-overlay" id="heroOverlay">
         <div class="hero__copy">
           <p class="hero__eyebrow"><span class="line"><span>YourStory presents · 18th Edition</span></span></p>
           <h2 class="hero__title">
@@ -378,7 +365,6 @@
             <span class="line"><span><a class="pill" href="#days">Explore the three days</a></span></span>
           </div>
         </div>
-      </div>
     </div>
 
     <!-- ─────────────────────────────────────────────────────────────
@@ -391,8 +377,8 @@
          ───────────────────────────────────────────────────────────── -->
     <div class="character" id="character" aria-hidden="true">
       <div class="backlight"></div>
-      <div class="sprite reflection"></div>
-      <div class="sprite figure"></div>
+      <div class="sprite reflection"><img class="strip" alt="" draggable="false"></div>
+      <div class="sprite figure"><img class="strip" alt="" draggable="false"></div>
     </div>
 
     <div class="intro-title" id="introTitle">
@@ -536,9 +522,8 @@ const CHAPTERS = [0, 0.30, 0.60, 0.86];
 gsap.registerPlugin(ScrollTrigger);
 
 const $ = id => document.getElementById(id);
-const scene = $('scene'), heroEl = $('hero'), character = $('character'), floorEl = $('floor'), floorGrid = $('floorGrid');
-const FLOOR_D = 3600;
-const floorWrap = $('floorWrap');
+const scene = $('scene'), heroEl = $('hero'), character = $('character'), heroOverlay = $('heroOverlay');
+const floorCanvas = $('floorCanvas'), fctx = floorCanvas.getContext('2d');
 const O = { x: 0, y: 0 };   // camera vanishing point on screen (px), updated each frame
 const PERSPECTIVE = 1100, ORIGIN_Y = 0.42;
 
@@ -591,7 +576,7 @@ function measure() {
     wallH: chord * 0.52,
     rowGap: chord * 0.62,
     wallY: -0.07 * vh,
-    heroW: chord * 2.5,
+    heroW: Math.min(chord * 2.5, chord * 1.5 * vw / vh),   // screen-shaped card, never taller than 1.5 slots
     heroR: wallR - 0.4,
   };
   L.heroH = L.heroW / (1440 / 762);
@@ -604,8 +589,11 @@ function measure() {
   const feetY = character.offsetTop + character.offsetHeight * CHARACTER.ground;  // ground line, px from top of the stage
   const sAtChar = PERSPECTIVE / (PERSPECTIVE + L.charZ);
   L.floorY = (feetY - ORIGIN_Y * vh) / sAtChar - (0.5 - ORIGIN_Y) * vh;
-  L.floorZ = 200 - FLOOR_D / 2;                                // plane spans z = +200 … −3400
-  floorEl.style.setProperty('--feet', `${((-L.charZ - (L.floorZ - FLOOR_D / 2)) / FLOOR_D * 100).toFixed(2)}%`);
+  // floor canvas at 1× — its lines and glows are soft, so extra resolution only costs time
+  L.dpr = 1;
+  floorCanvas.width = Math.round(vw * L.dpr);
+  floorCanvas.height = Math.round(vh * L.dpr);
+  lastFloorKey = '';
 
   const span = mobile ? 300 : 320;
   active.forEach((p, k) => {
@@ -646,6 +634,17 @@ function project(x, y, z) {
     k,
   };
 }
+// camera travel during the push. Solved so the hero's on-screen size grows geometrically
+// (an even zoom rate) instead of exploding at the end, as raw perspective would.
+function dollyAt(p) {
+  const e = ease.inOut(range(p, T.push));
+  if (e <= 0) return 0;
+  const zW = -L.charZ - L.heroR * L.R * 0.92;                  // hero's depth in the wall
+  const s0 = L.heroW / L.vw, s = lerp(L.heroW, L.vw, e) / L.vw;
+  const A0 = PERSPECTIVE / (PERSPECTIVE - zW) * s0;             // starting on-screen scale
+  const k = Math.pow(A0, 1 - e) / s;                           // perspective factor needed now
+  return (PERSPECTIVE - PERSPECTIVE / k) - zW;
+}
 const visible = angle => 1 - smooth(98, 126, Math.abs(angle));
 const nearFade = (z, push) => 1 - smooth(lerp(180, -520, push), lerp(420, -160, push), z);
 
@@ -657,7 +656,7 @@ function renderPanels(p) {
   const orbit = ease.sine(range(p, T.orbit));
   const phi = -ORBIT_SWEEP * orbit;
   const pushT = range(p, T.push);
-  const dolly = L.dolly * ease.inOut(pushT);
+  const dolly = dollyAt(p);
 
   active.forEach((pn, k) => {
     const c = ease.inOut(clamp(range(p, T.converge) * 1.15 - pn.stagger * 2.2));
@@ -704,27 +703,31 @@ function renderHero(p) {
   const push = ease.inOut(range(p, T.push));
   const r = lerp(L.heroStartR, L.heroR, approach);
   const pos = place(0, r, lerp(L.wallY - L.vh * 0.02, L.wallY, approach));
-  const z = pos.z + L.dolly * push;
-  // the layer is always viewport-sized; the card is a uniformly scaled, clipped window onto it
-  const w = lerp(L.heroW, L.vw, push), h = lerp(L.heroH, L.vh, push);   // visible card size (at z = 0, 1px = 1px)
-  const s = w / L.vw;
-  const inset = Math.max(0, (L.vh - h / s) / 2);
+  const z = pos.z + dollyAt(p);
+  // the card is the screen's shape, uniformly scaled: at z = 0 and s = 1 it is exactly the viewport
+  const s = lerp(L.heroW, L.vw, push) / L.vw;
   const y = lerp(pos.y, 0, push);
 
   const pr = project(0, y, z);
   heroItem.z = z;
   const st = heroEl.style;
   st.transform = `translate3d(${pr.dx.toFixed(2)}px,${pr.dy.toFixed(2)}px,0) scale(${(pr.k * s).toFixed(5)})`;
-  st.clipPath = `inset(${inset.toFixed(1)}px 0 round ${(lerp(14, 0, push) / s).toFixed(1)}px)`;
+  const full = push > 0.985;
+  if (full !== heroEl._full) { heroEl.classList.toggle('is-full', full); heroEl._full = full; }
   const lit = lerp(0.5, 1, ease.out(range(p, [0.2, T.push[0] + 0.1])));
   st.opacity = (lerp(0.55, 1, approach) * lit * clamp(introK * 1.4)).toFixed(3);
+  // the headline layer fades in over the last stretch of the push
+  const ov = smooth(0.7, 1, range(p, T.push));
+  heroOverlay.style.opacity = ov.toFixed(3);
+  const ovVis = ov > 0.001;
+  if (ovVis !== heroOverlay._vis) { heroOverlay.style.visibility = ovVis ? 'visible' : 'hidden'; heroOverlay._vis = ovVis; }
   // slow push-in on the photo itself (Ken Burns) through the reveal and hold
   const kb = ease.out(range(p, [T.push[0], 1]));
   heroImg.style.transform = `scale(${lerp(1.14, 1.02, kb).toFixed(4)}) translate3d(${(mouse.x * -6).toFixed(2)}px,${(mouse.y * -4).toFixed(2)}px,0)`;
 }
 
 // masked line reveals
-const heroLines = [...heroEl.querySelectorAll('.line > span')];
+const heroLines = [...heroOverlay.querySelectorAll('.line > span')];
 const titleLines = [...$('introTitle').querySelectorAll('.line > span')];
 const heroCta = $('heroCta'), scrollCue = $('scrollCue');
 function renderCopy(p) {
@@ -745,12 +748,12 @@ function renderCopy(p) {
 }
 
 // walking character + the floor he walks on
-const sprites = [...character.querySelectorAll('.sprite')];
+const strips = [...character.querySelectorAll('.strip')];
 const reflection = character.querySelector('.reflection');
 character.style.setProperty('--aspect', CHARACTER.aspect);
 character.style.setProperty('--frames', CHARACTER.frames);
 character.style.setProperty('--ground', `${CHARACTER.ground * 100}%`);
-sprites.forEach(el => (el.style.backgroundImage = `url("${CHARACTER.src}")`));
+strips.forEach(img => (img.src = CHARACTER.src));
 let lastFrame = -1;
 function renderCharacter(p) {
   const push = ease.inOut(range(p, T.push));
@@ -761,8 +764,8 @@ function renderCharacter(p) {
   const walkP = Math.min(p, 0.93) * CHARACTER.strides;  // stride follows the scroll; rests at the end
   const frame = Math.floor((walkP % 1) * CHARACTER.frames) % CHARACTER.frames;
   if (frame !== lastFrame) {
-    const x = CHARACTER.frames > 1 ? (frame / (CHARACTER.frames - 1)) * 100 : 0;
-    sprites.forEach(el => (el.style.backgroundPosition = `${x}% 0`));
+    const x = -(frame / CHARACTER.frames) * 100;    // % of the strip's own width
+    strips.forEach(img => (img.style.transform = `translate3d(${x.toFixed(4)}%,0,0)`));
     if (CHARACTER.contact) reflection.style.setProperty('--contact', `${(CHARACTER.contact[frame] * 100).toFixed(2)}%`);
     lastFrame = frame;
   }
@@ -773,11 +776,75 @@ function renderCharacter(p) {
   if (cv !== character._vis) { character.style.visibility = cv ? 'visible' : 'hidden'; character._vis = cv; }
 
   // floor: grid lines slide toward the camera as he walks; the plane rides the dolly and fades
-  const travel = walkP * CHARACTER.strideLength;
-  const dolly = L.dolly * push;
-  floorEl.style.transform = `translate3d(0,${L.floorY.toFixed(1)}px,${(L.floorZ + dolly).toFixed(1)}px) rotateX(90deg)`;
-  floorGrid.style.transform = `translate3d(0,${(travel % 240).toFixed(1)}px,0)`;
-  floorEl.style.opacity = (clamp(introK * 1.5) * (1 - smooth(0.3, 0.85, push))).toFixed(3);
+  drawFloor(walkP * CHARACTER.strideLength, dollyAt(p), clamp(introK * 1.5) * (1 - smooth(0.3, 0.85, push)));
+}
+
+// ── floor, drawn in perspective on a canvas (redrawn only when something changed) ──
+const FLOOR = { near: 150, far: -3400, halfW: 1000, colGap: 200, rowGap: 240 };
+let lastFloorKey = '';
+function drawFloor(travel, dolly, alpha) {
+  const key = `${travel.toFixed(1)}|${dolly.toFixed(1)}|${alpha.toFixed(3)}|${O.x.toFixed(1)}|${O.y.toFixed(1)}`;
+  if (key === lastFloorKey) return;
+  lastFloorKey = key;
+  const c = fctx, d = L.dpr;
+  c.setTransform(1, 0, 0, 1, 0, 0);
+  c.clearRect(0, 0, floorCanvas.width, floorCanvas.height);
+  if (alpha < 0.005) return;
+  c.setTransform(d, 0, 0, d, 0, 0);
+  c.globalAlpha = alpha;
+  const pt = (x, z) => { const p = project(x, L.floorY, z + dolly); return [L.vw / 2 + p.dx, L.vh / 2 + p.dy]; };
+  const nearZ = Math.min(FLOOR.near, PERSPECTIVE - 80 - dolly);   // never cross the camera plane
+  const fade = z => smooth(FLOOR.far, FLOOR.far + 1500, z);       // fade into the dark at the far end
+  c.lineWidth = 1;
+
+  // lines running away from the camera
+  for (let x = -FLOOR.halfW; x <= FLOOR.halfW + 1; x += FLOOR.colGap) {
+    const side = 1 - smooth(FLOOR.halfW * 0.45, FLOOR.halfW, Math.abs(x));
+    if (side <= 0) continue;
+    const [x1, y1] = pt(x, nearZ), [x2, y2] = pt(x, FLOOR.far);
+    const g = c.createLinearGradient(x1, y1, x2, y2);
+    g.addColorStop(0, `rgba(255,255,255,${0.07 * side})`);
+    g.addColorStop(0.55, `rgba(255,255,255,${0.05 * side})`);
+    g.addColorStop(1, 'rgba(255,255,255,0)');
+    c.strokeStyle = g;
+    c.beginPath(); c.moveTo(x1, y1); c.lineTo(x2, y2); c.stroke();
+  }
+  // cross lines sliding toward the camera with his stride
+  const off = travel % FLOOR.rowGap;
+  for (let z = FLOOR.far + off; z <= nearZ; z += FLOOR.rowGap) {
+    const a = 0.06 * fade(z);
+    if (a < 0.003) continue;
+    const [x1, y1] = pt(-FLOOR.halfW, z), [x2, y2] = pt(FLOOR.halfW, z);
+    const g = c.createLinearGradient(x1, y1, x2, y2);
+    g.addColorStop(0, 'rgba(255,255,255,0)');
+    g.addColorStop(0.3, `rgba(255,255,255,${a})`);
+    g.addColorStop(0.7, `rgba(255,255,255,${a})`);
+    g.addColorStop(1, 'rgba(255,255,255,0)');
+    c.strokeStyle = g;
+    c.beginPath(); c.moveTo(x1, y1); c.lineTo(x2, y2); c.stroke();
+  }
+  // light pools: under his feet, and the long reflection of the light at the end of the corridor
+  const glow = (x, z, rx, color, flatten) => {
+    const [cx, cy] = pt(x, z), k = project(0, 0, z + dolly).k;
+    c.save(); c.translate(cx, cy); c.scale(1, flatten);
+    const g = c.createRadialGradient(0, 0, 0, 0, 0, rx * k);
+    g.addColorStop(0, color); g.addColorStop(1, 'rgba(0,0,0,0)');
+    c.fillStyle = g; c.beginPath(); c.arc(0, 0, rx * k, 0, Math.PI * 2); c.fill();
+    c.restore();
+  };
+  glow(0, -L.charZ, 230, 'rgba(255, 220, 205, 0.16)', 0.28);
+  glow(0, -L.charZ, 520, 'rgba(255, 150, 140, 0.06)', 0.3);
+  const [sx1, sy1] = pt(0, FLOOR.far), [sx2, sy2] = pt(0, -L.charZ - 200);
+  const sg = c.createLinearGradient(sx1, sy1, sx2, sy2);
+  sg.addColorStop(0, 'rgba(255, 215, 205, 0.12)'); sg.addColorStop(1, 'rgba(255, 215, 205, 0)');
+  c.fillStyle = sg;
+  // soft-edged streak: a few nested, faint trapezoids instead of a (slow) blur filter
+  for (const [wf, wn, a] of [[30, 70, 0.5], [60, 130, 0.35], [100, 200, 0.2]]) {
+    const [ax, ay] = pt(-wf, FLOOR.far), [bx, by] = pt(wf, FLOOR.far), [cx2, cy2] = pt(wn, -L.charZ - 200), [dx2, dy2] = pt(-wn, -L.charZ - 200);
+    c.globalAlpha = alpha * a;
+    c.beginPath(); c.moveTo(ax, ay); c.lineTo(bx, by); c.lineTo(cx2, cy2); c.lineTo(dx2, dy2); c.closePath(); c.fill();
+  }
+  c.globalAlpha = 1;
 }
 
 // atmosphere, camera, HUD
@@ -790,8 +857,7 @@ function renderWorld(p) {
   const ox = 50 + drift * 2.5 + mouse.x * 1.6 * (1 - push);
   const oy = (ORIGIN_Y * 100) - drift * 1.5 + mouse.y * 1.1 * (1 - push);
   O.x = ox / 100 * L.vw; O.y = oy / 100 * L.vh;
-  floorWrap.style.perspectiveOrigin = `${ox.toFixed(3)}% ${oy.toFixed(3)}%`;
-  aurora.style.transform = `translate3d(${(mouse.x * 10).toFixed(1)}px,${(p * 6).toFixed(2)}vh,0) scale(${1 + push * 0.3})`;
+  aurora.style.transform = `translate3d(${(mouse.x * 10).toFixed(1)}px,${(p * 6).toFixed(2)}vh,0)`;
   aurora.style.opacity = (0.38 * (1 - push)).toFixed(3);
   glow.style.opacity = (1 - push * 0.8).toFixed(3);
   // the light at the end grows as the panels converge, then hands over to the hero
