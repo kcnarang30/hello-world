@@ -1,0 +1,986 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TechSparks 2027 — The Intelligence Economy</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Michroma&family=Inter+Tight:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #050508;
+    --ink: #f3f1ee;
+    --muted: rgba(243, 241, 238, .56);
+    --faint: rgba(243, 241, 238, .14);
+    --red: #e3262f;
+    --display: "Michroma", "Eurostile", "Arial Black", sans-serif;
+    --ui: "Inter Tight", "Helvetica Neue", Arial, sans-serif;
+    --ease: cubic-bezier(.16, 1, .3, 1);
+    --gutter: clamp(16px, 4vw, 56px);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { background: var(--bg); color: var(--ink); overflow-x: clip; }
+  body { font-family: var(--ui); -webkit-font-smoothing: antialiased; }
+  html.lenis, html.lenis body { height: auto; }
+  .lenis.lenis-smooth { scroll-behavior: auto !important; }
+  img { display: block; }
+  a { color: inherit; }
+  ::selection { background: var(--red); color: #fff; }
+
+  /* ───────── Top bar ───────── */
+  .topbar {
+    position: fixed; inset: 0 0 auto 0; z-index: 50;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 22px var(--gutter);
+    font: 500 12px/1 var(--ui); letter-spacing: .14em; text-transform: uppercase;
+    pointer-events: none;
+    background: linear-gradient(180deg, rgba(5,5,8,.75), rgba(5,5,8,0));
+  }
+  .logo { display: flex; align-items: baseline; gap: 8px; }
+  .logo small { font-size: 9px; letter-spacing: .2em; color: var(--muted); }
+  .logo b { font: 400 15px/1 var(--display); letter-spacing: .02em; text-transform: none; }
+  .pill {
+    pointer-events: auto; color: var(--ink); text-decoration: none; display: inline-flex; align-items: center; gap: 10px;
+    border: 1px solid rgba(255,255,255,.22); border-radius: 999px; padding: 12px 20px;
+    font: 500 11px/1 var(--ui); letter-spacing: .16em; text-transform: uppercase;
+    backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); background: rgba(255,255,255,.04);
+    transition: background .5s var(--ease), border-color .5s var(--ease), color .5s var(--ease);
+  }
+  .pill:hover { background: rgba(255,255,255,.12); border-color: rgba(255,255,255,.4); }
+  .pill--solid { background: var(--ink); color: #0a0a0c; border-color: var(--ink); }
+  .pill--solid:hover { background: #fff; color: #000; }
+  .pill i { font-style: normal; transition: transform .5s var(--ease); }
+  .pill:hover i { transform: translateX(4px); }
+
+  /* ───────── Scroll section ─────────
+     The section is tall; .stage is sticky, so it stays on screen while the
+     page scrolls through the section. Change the height to change the pace. */
+  .intro { position: relative; height: 820vh; }
+  .stage {
+    position: sticky; top: 0;
+    height: 100vh; height: 100svh;
+    overflow: hidden;
+    isolation: isolate;
+    /* static colour glows painted straight into the stage (no extra GPU layers) */
+    background:
+      radial-gradient(ellipse 45% 35% at 30% 42%, rgba(59, 75, 216, .2), transparent 70%),
+      radial-gradient(ellipse 45% 35% at 72% 42%, rgba(227, 38, 47, .18), transparent 70%),
+      var(--bg);
+  }
+  .stage::before { /* refracted-glass ribs from the TS'27 wallpaper (static, not composited) */
+    content: ""; position: absolute; inset: 0; pointer-events: none; opacity: .6;
+    background: repeating-linear-gradient(90deg,
+      rgba(255,255,255,.03) 0 1px, transparent 1px 22px, rgba(0,0,0,.18) 22px 46px);
+    -webkit-mask-image: radial-gradient(ellipse 80% 45% at 50% 40%, #000, transparent 75%);
+            mask-image: radial-gradient(ellipse 80% 45% at 50% 40%, #000, transparent 75%);
+  }
+
+  /* Atmosphere (back to front) */
+  .atmo { position: absolute; inset: 0; pointer-events: none; }
+  .atmo--aurora {
+    inset: auto -10% -6% -10%; height: 70%;
+    background: url("assets/hero/aurora.webp") center bottom / cover no-repeat;
+    opacity: .38;   /* the fade-to-top is baked into the image's alpha (no CSS mask) */
+    will-change: transform, opacity;
+  }
+  /* Photo layer. No shared 3D context: the script projects every panel itself and
+     hands the browser flat layers + an explicit stacking order (no depth-sorting
+     or plane-splitting by the browser, which caused flicker/stutter). */
+  .scene { position: absolute; inset: 0; z-index: 3; isolation: isolate; }
+  /* One canvas draws the light at the end of the corridor, the floor and the vignette:
+     a few dozen gradients/lines, redrawn only when something changes. Replaces several
+     full-screen GPU layers. */
+  .floor-canvas { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+  .card {
+    position: absolute; left: 50%; top: 50%;
+    border-radius: 10px;
+    overflow: hidden;
+    background: #111;
+    backface-visibility: hidden;
+    will-change: transform, opacity;
+    box-shadow: 0 18px 36px -14px rgba(0,0,0,.65);
+  }
+  .card img { width: 100%; height: 100%; object-fit: cover; user-select: none; -webkit-user-drag: none; }
+  .card:not(.hero) img { filter: saturate(.8) contrast(1.06) brightness(.94); } /* one consistent grade */
+  .card::before { /* hairline edge highlight */
+    content: ""; position: absolute; inset: 0; border-radius: inherit; z-index: 2;
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,.1), inset 0 1px 0 rgba(255,255,255,.18);
+    opacity: var(--edge, 1);
+    pointer-events: none;
+  }
+  .card .sheen { /* static light sweep (painted once) */
+    position: absolute; inset: 0; z-index: 1; pointer-events: none;
+    background: linear-gradient(110deg, transparent 30%, rgba(255,255,255,.07) 46%, transparent 60%);
+  }
+
+  /* Hero card */
+  /* The hero card holds only the photo (screen-shaped), so scaling it is pure GPU work.
+     Its headline/grade live in .hero-overlay, which never scales — it only fades in. */
+  .hero { border-radius: 40px; box-shadow: none; overflow: hidden; background: none; }   /* ≈10px on screen at wall size */
+  .hero.is-full { border-radius: 0; }
+  .hero::before { display: none; }
+  .hero > img { will-change: transform; }
+  .hero-overlay {
+    position: absolute; inset: 0; z-index: 6; container-type: size;
+    opacity: 0; visibility: hidden; pointer-events: none; will-change: opacity;
+  }
+  .hero-overlay::before { /* legibility + cinematic grade over the photo */
+    content: ""; position: absolute; inset: 0; pointer-events: none;
+    background:
+      linear-gradient(180deg, rgba(5,5,8,.6) 0%, rgba(5,5,8,.12) 34%, rgba(5,5,8,.3) 62%, rgba(5,5,8,.92) 100%),
+      radial-gradient(ellipse at 50% 42%, transparent 35%, rgba(5,5,8,.65) 100%),
+      linear-gradient(90deg, rgba(40, 50, 140, .18), transparent 40%, transparent 60%, rgba(140, 20, 30, .18));
+  }
+  .hero__copy {
+    position: absolute; inset: 0; z-index: 3;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    text-align: center; padding: 0 6cqw; margin-top: -22cqh;
+  }
+  .hero__eyebrow { font: 500 max(9px, 1cqw)/1 var(--ui); letter-spacing: .32em; text-transform: uppercase; color: var(--muted); }
+  .hero__title {
+    font: 400 7.2cqw/1.02 var(--display); letter-spacing: -.01em; text-transform: uppercase;
+    margin: 2.6cqh 0 2.8cqh;
+    text-shadow: 0 10px 60px rgba(0,0,0,.45);
+  }
+  .hero__title em { display: block; font-style: normal; font-size: .36em; letter-spacing: .34em; color: var(--muted); padding-bottom: .55em; }
+  .hero__meta { font: 500 max(10px, 1.05cqw)/1.4 var(--ui); letter-spacing: .16em; text-transform: uppercase; }
+  .hero__meta span { color: var(--red); }
+  .hero__cta { display: flex; gap: 12px; justify-content: center; margin-top: 4.5cqh; pointer-events: none; }
+  .hero__cta.is-live { pointer-events: auto; }
+  .hero__cta .line { padding: 2px; }
+  .hero-overlay .pill { backdrop-filter: none; -webkit-backdrop-filter: none; }
+  .hero-overlay .pill:not(.pill--solid) { background: rgba(5,5,8,.35); }
+
+  /* Masked line reveal */
+  .line { display: block; overflow: hidden; padding-bottom: .06em; }
+  .line > span { display: block; will-change: transform; }
+
+  /* ───────── Character ─────────
+     A figure in the shadows: pure-black silhouette, lit only from behind
+     (thin rim light + the haze of the light beyond him), reflected on the floor. */
+  .character {
+    position: absolute; left: 50%; bottom: 9vh; z-index: 5;
+    height: min(50vh, 520px); aspect-ratio: var(--aspect, .34);
+    transform-origin: 50% var(--ground, 100%);
+    will-change: transform;
+    pointer-events: none;
+  }
+  .character .figure-canvas { /* current frame + its floor reflection, drawn on demand */
+    position: absolute; left: 0; top: 0; width: 100%; height: 160%; pointer-events: none;
+    filter:
+      drop-shadow(-1px -.5px .6px rgba(150, 175, 255, .6))
+      drop-shadow(1px -.5px .6px rgba(255, 160, 130, .55));
+  }
+  .character .backlight {
+    position: absolute; left: 50%; top: 2%; width: 340%; aspect-ratio: 1.15;
+    transform: translateX(-50%);
+    background:
+      radial-gradient(ellipse 22% 30% at 50% 40%, rgba(255, 230, 215, .18), transparent 70%),
+      radial-gradient(ellipse 50% 50% at 42% 45%, rgba(110, 130, 255, .12), transparent 70%),
+      radial-gradient(ellipse 50% 50% at 58% 45%, rgba(255, 70, 80, .12), transparent 70%);
+    filter: blur(6px);
+  }
+
+  /* ───────── Overlays ───────── */
+  .intro-title {
+    position: absolute; left: 0; right: 0; top: 14vh; z-index: 6;
+    text-align: center; pointer-events: none;
+  }
+  .intro-title p { font: 500 11px/1 var(--ui); letter-spacing: .34em; text-transform: uppercase; color: var(--muted); margin-bottom: 22px; }
+  .intro-title h1 { font: 400 clamp(30px, 5.2vw, 84px)/1.04 var(--display); text-transform: uppercase; letter-spacing: -.01em; }
+  .scroll-cue {
+    position: absolute; right: var(--gutter); bottom: 76px; z-index: 7;
+    display: flex; flex-direction: column; align-items: flex-end; gap: 12px;
+    font: 500 10px/1 var(--ui); letter-spacing: .34em; text-transform: uppercase; color: var(--muted);
+    pointer-events: none;
+  }
+  .scroll-cue i { display: block; width: 1px; height: 38px; background: linear-gradient(var(--ink), transparent); transform-origin: top; animation: cue 2.2s var(--ease) infinite; }
+  @keyframes cue { 0% { transform: scaleY(0); opacity: 1; } 60% { transform: scaleY(1); opacity: 1; } 100% { transform: scaleY(1); opacity: 0; } }
+
+  .hud {
+    position: absolute; left: var(--gutter); right: var(--gutter); bottom: 28px; z-index: 7;
+    display: flex; justify-content: space-between; align-items: flex-end; gap: 24px;
+    font: 500 11px/1 var(--ui); letter-spacing: .16em; text-transform: uppercase; color: var(--muted);
+    pointer-events: none;
+  }
+  .chapters { display: flex; gap: 26px; }
+  .chapters li { list-style: none; transition: color .6s var(--ease), opacity .6s var(--ease); opacity: .4; }
+  .chapters li.is-active { color: var(--ink); opacity: 1; }
+  .chapters li b { font-weight: 500; color: var(--red); margin-right: 8px; }
+  .progress { display: flex; align-items: center; gap: 14px; }
+  .progress span { font-variant-numeric: tabular-nums; min-width: 3ch; text-align: right; }
+  .progress em { display: block; width: min(18vw, 180px); height: 1px; background: rgba(255,255,255,.18); position: relative; }
+  .progress i { position: absolute; inset: 0; background: var(--ink); transform-origin: 0 50%; transform: scaleX(0); }
+
+  .grain { /* rendered at half size and scaled up 2× — a quarter of the GPU memory */
+    position: fixed; left: -6%; top: -6%; width: 56%; height: 56%; z-index: 60; pointer-events: none; opacity: .065;
+    transform-origin: 0 0; will-change: transform;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='1.15' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+    animation: grain 1s steps(6) infinite;
+  }
+  @keyframes grain {
+    0% { transform: scale(2) translate(0, 0); } 20% { transform: scale(2) translate(-4%, 3%); }
+    40% { transform: scale(2) translate(3%, -4%); } 60% { transform: scale(2) translate(-2%, 4%); }
+    80% { transform: scale(2) translate(4%, 1%); } 100% { transform: scale(2) translate(0, 0); }
+  }
+
+  /* ───────── Preloader ───────── */
+  .loader {
+    position: fixed; inset: 0; z-index: 100; background: var(--bg);
+    display: flex; flex-direction: column; justify-content: space-between;
+    padding: 28px var(--gutter);
+    clip-path: inset(0 0 0 0);
+  }
+  .loader__top, .loader__bottom { display: flex; justify-content: space-between; align-items: flex-end;
+    font: 500 11px/1 var(--ui); letter-spacing: .3em; text-transform: uppercase; color: var(--muted); }
+  .loader__count { font: 400 clamp(64px, 14vw, 220px)/.8 var(--display); color: var(--ink); letter-spacing: -.04em; font-variant-numeric: tabular-nums; }
+  .loader__bar { position: absolute; left: var(--gutter); right: var(--gutter); top: 50%; height: 1px; background: var(--faint); }
+  .loader__bar i { position: absolute; inset: 0; background: var(--ink); transform-origin: 0 50%; transform: scaleX(0); }
+
+  /* ───────── After the intro: three days ───────── */
+  .days { position: relative; z-index: 1; background: var(--bg); padding: 18vh var(--gutter) 14vh; }
+  .days__head { display: grid; grid-template-columns: 1fr auto; align-items: end; gap: 24px; border-bottom: 1px solid var(--faint); padding-bottom: 34px; }
+  .days__head p { font: 500 11px/1 var(--ui); letter-spacing: .32em; text-transform: uppercase; color: var(--muted); margin-bottom: 22px; }
+  .days__head h2 { font: 400 clamp(28px, 4.4vw, 68px)/1.04 var(--display); text-transform: uppercase; letter-spacing: -.01em; max-width: 14ch; }
+  .days__head .pill { margin-bottom: 6px; }
+  .days__grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; background: var(--faint); border-bottom: 1px solid var(--faint); }
+  .day {
+    background: var(--bg); padding: 40px 34px 46px; position: relative; overflow: hidden;
+    transition: background .7s var(--ease);
+  }
+  .day::before { /* glow that follows the theme colour on hover */
+    content: ""; position: absolute; inset: auto -20% -60% -20%; height: 90%;
+    background: radial-gradient(ellipse at 50% 100%, rgba(227, 38, 47, .22), transparent 65%);
+    opacity: 0; transition: opacity .8s var(--ease);
+  }
+  .day:hover { background: #09090d; }
+  .day:hover::before { opacity: 1; }
+  .day__tag { display: inline-block; font: 500 11px/1 var(--ui); letter-spacing: .26em; text-transform: uppercase; color: var(--red); }
+  .day h3 { font: 400 clamp(30px, 3.2vw, 52px)/1 var(--display); text-transform: uppercase; margin: 34px 0 14px; letter-spacing: -.01em; }
+  .day h3 small { display: block; font-size: .42em; color: var(--muted); letter-spacing: .3em; margin-bottom: 10px; }
+  .day__order { font: 500 11px/1.4 var(--ui); letter-spacing: .22em; text-transform: uppercase; color: var(--muted); }
+  .day__q { font: 400 clamp(17px, 1.35vw, 21px)/1.4 var(--ui); margin: 38px 0 26px; max-width: 26ch; }
+  .day ul { list-style: none; position: relative; }
+  .day li { font: 400 14px/1.45 var(--ui); color: rgba(243,241,238,.72); padding: 13px 0; border-top: 1px solid var(--faint); }
+  .footer { display: flex; justify-content: space-between; gap: 24px; padding: 34px var(--gutter); font: 500 11px/1 var(--ui); letter-spacing: .2em; text-transform: uppercase; color: var(--muted); border-top: 1px solid var(--faint); }
+  .reveal { will-change: transform, opacity; }
+
+  @media (max-width: 719px) {
+    .chapters li:not(.is-active) { display: none; }
+    .topbar .pill { display: none; }
+    .intro-title { top: 13vh; padding: 0 16px; }
+    .character { height: 42vh; bottom: 12vh; }
+    .scroll-cue { display: none; }
+    .days__head { grid-template-columns: 1fr; }
+    .days__grid { grid-template-columns: 1fr; }
+    .hero__cta { flex-direction: column; align-items: center; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .grain, .scroll-cue i { animation: none; }
+  }
+</style>
+</head>
+<body>
+
+<div class="loader" id="loader" aria-hidden="true">
+  <div class="loader__top"><span>YourStory · TechSparks 2027</span><span>The Intelligence Economy</span></div>
+  <div class="loader__bar"><i id="loadBar"></i></div>
+  <div class="loader__bottom"><span>Loading the experience</span><span class="loader__count" id="loadCount">000</span></div>
+</div>
+<div class="grain" aria-hidden="true"></div>
+
+<header class="topbar">
+  <div class="logo"><small>YourStory</small><b>TechSparks</b></div>
+  <a class="pill" href="#days">Register interest <i>→</i></a>
+</header>
+
+<section class="intro" id="intro">
+  <div class="stage" id="stage">
+    <div class="atmo atmo--aurora" id="aurora"></div>
+
+    <canvas class="floor-canvas" id="floorCanvas" aria-hidden="true"></canvas>
+
+    <div class="scene" id="scene">
+      <!-- Photo panels are generated from PANELS in the script below. -->
+
+      <!-- ─────────────────────────────────────────────────────────
+           MAIN HERO IMAGE
+           REPLACE: change the src below (keep the class names).
+           ───────────────────────────────────────────────────────── -->
+      <div class="card hero" id="hero">
+        <img src="assets/hero/hero-venue.webp" alt="TechSparks venue entrance" draggable="false">
+      </div>
+    </div>
+
+    <!-- Headline + grade over the final hero frame (never scaled; fades in) -->
+    <div class="hero-overlay" id="heroOverlay">
+        <div class="hero__copy">
+          <p class="hero__eyebrow"><span class="line"><span>YourStory presents · 18th Edition</span></span></p>
+          <h2 class="hero__title">
+            <span class="line"><span><em>The</em></span></span>
+            <span class="line"><span>Intelligence</span></span>
+            <span class="line"><span>Economy</span></span>
+          </h2>
+          <p class="hero__meta"><span class="line"><span>TechSparks 2027 <span>·</span> Bengaluru <span>·</span> Three days. One story.</span></span></p>
+          <div class="hero__cta" id="heroCta">
+            <span class="line"><span><a class="pill pill--solid" href="#days">Register interest <i>→</i></a></span></span>
+            <span class="line"><span><a class="pill" href="#days">Explore the three days</a></span></span>
+          </div>
+        </div>
+    </div>
+
+    <!-- ─────────────────────────────────────────────────────────────
+         CHARACTER — a hooded figure walking away from camera, in the shadows.
+         The walk is a sprite sheet: 24 frames side by side, rendered from a
+         rigged 3D human (see tools/character/). The scroll steps through the
+         frames, so his stride follows the scroll exactly.
+         REPLACE: set CHARACTER.src / frames in the script (a single PNG works
+         too: frames: 1). Rim light: .figure-canvas CSS; reflection: drawFigure().
+         Turn the figure (and his glow) off with SHOW_PERSON = false in the script.
+         ───────────────────────────────────────────────────────────── -->
+    <div class="character" id="character" aria-hidden="true">
+      <div class="backlight"></div>
+      <canvas class="figure-canvas" id="figureCanvas"></canvas>
+    </div>
+
+    <div class="intro-title" id="introTitle">
+      <p class="line"><span>TechSparks 2027 · Bengaluru</span></p>
+      <h1>
+        <span class="line"><span>Three days.</span></span>
+        <span class="line"><span>One story.</span></span>
+      </h1>
+    </div>
+    <div class="scroll-cue" id="scrollCue"><span>Scroll to enter</span><i></i></div>
+
+    <div class="hud">
+      <ol class="chapters" id="chapters">
+        <li><b>01</b>Arrive</li>
+        <li><b>02</b>Orbit</li>
+        <li><b>03</b>Converge</li>
+        <li><b>04</b>Enter</li>
+      </ol>
+      <div class="progress"><span id="progressNum">00</span><em><i id="progressBar"></i></em></div>
+    </div>
+
+  </div>
+</section>
+
+<!-- Content from the TS'27 Figma ("Three days. One story.") -->
+<section class="days" id="days">
+  <div class="days__head reveal">
+    <div>
+      <p>Three days · One story</p>
+      <h2>Redefining tech in the age of AI</h2>
+    </div>
+    <a class="pill" href="#intro">Back to the top <i>↑</i></a>
+  </div>
+  <div class="days__grid">
+    <article class="day reveal">
+      <span class="day__tag">Day 01</span>
+      <h3><small>The</small>Shift</h3>
+      <p class="day__order">The new global order</p>
+      <p class="day__q">What happens when technology becomes a source of power?</p>
+      <ul>
+        <li>Sovereign AI, compute &amp; semiconductors</li>
+        <li>Quantum, space &amp; defence</li>
+        <li>Critical minerals, energy &amp; climate infrastructure</li>
+        <li>Data, cyber resilience &amp; global technology standards</li>
+        <li>India’s place in the emerging global order</li>
+      </ul>
+    </article>
+    <article class="day reveal">
+      <span class="day__tag">Day 02</span>
+      <h3><small>The</small>Builder</h3>
+      <p class="day__order">The new work order</p>
+      <p class="day__q">What happens when technology changes how everything gets built?</p>
+      <ul>
+        <li>AI from prototype to production</li>
+        <li>Agentic enterprises &amp; human-machine teams</li>
+        <li>Robotics, autonomous systems &amp; smart factories</li>
+        <li>Deeptech, biotech, spacetech &amp; climate innovation</li>
+        <li>AI-native companies, creator-builders &amp; the future of work</li>
+        <li>Capital, talent and commercialisation</li>
+      </ul>
+    </article>
+    <article class="day reveal">
+      <span class="day__tag">Day 03</span>
+      <h3><small>The</small>Impact</h3>
+      <p class="day__order">The new human order</p>
+      <p class="day__q">What happens when technology becomes part of everyday life?</p>
+      <ul>
+        <li>Health, longevity &amp; biotechnology</li>
+        <li>Education, creativity &amp; human augmentation</li>
+        <li>AI companions, identity &amp; privacy</li>
+        <li>Assistive robotics &amp; autonomous mobility</li>
+        <li>Inclusive innovation for Bharat</li>
+        <li>Safety, ethics, agency and the limits of automation</li>
+      </ul>
+    </article>
+  </div>
+</section>
+<footer class="footer"><span>YourStory · TechSparks 2027</span><span>Bengaluru</span></footer>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/lenis@1.1.20/dist/lenis.min.js"></script>
+<script>
+/* ════════════════════════════════════════════════════════════════════
+   PANELS — the photos orbiting the character.
+   REPLACE: point `src` at your own images (any aspect ratio; set `aspect`
+   to width / height so the panel frames it correctly).
+   `mobile: false` hides a panel on small screens.
+   Positions are generated automatically; order = order around the orbit.
+   ════════════════════════════════════════════════════════════════════ */
+const PANELS = [
+  { src: 'assets/panels/10-human-ai.webp',                  aspect: 1.94, mobile: true  },
+  { src: 'assets/panels/11-speaker-deepinder-goyal.webp',   aspect: 0.95, mobile: true  },
+  { src: 'assets/panels/02-crowd-floor.webp',               aspect: 1.28, mobile: true  },
+  { src: 'assets/panels/12-speaker-nirmala-sitharaman.webp',aspect: 0.95, mobile: true  },
+  { src: 'assets/panels/03-projection-curtains.webp',       aspect: 1.28, mobile: true  },
+  { src: 'assets/panels/01-panel-discussion.webp',          aspect: 1.30, mobile: true  },
+  { src: 'assets/panels/13-speaker-amitabh-kant.webp',      aspect: 0.95, mobile: false },
+  { src: 'assets/panels/06-30-years.webp',                  aspect: 1.65, mobile: true  },
+  { src: 'assets/panels/05-hologram.webp',                  aspect: 0.74, mobile: false },
+  { src: 'assets/panels/15-speaker-sam-altman.webp',        aspect: 0.95, mobile: true  },
+  { src: 'assets/panels/09-stage-panel-bw.webp',            aspect: 0.91, mobile: true  },
+  { src: 'assets/panels/04-expo-floor.webp',                aspect: 1.32, mobile: false },
+  { src: 'assets/panels/14-speaker-pramod-varma.webp',      aspect: 0.95, mobile: false },
+  { src: 'assets/panels/08-audience.webp',                  aspect: 1.07, mobile: false },
+  { src: 'assets/panels/16-speaker-jensen-huang.webp',      aspect: 0.95, mobile: true  },
+  { src: 'assets/panels/07-rings.webp',                     aspect: 1.09, mobile: false },
+];
+
+/* PERSON — set to false for the version without the walking figure (and his glow). */
+const SHOW_PERSON = false;
+
+/* CHARACTER — sprite-sheet walk cycle (see tools/character/) */
+const CHARACTER = {
+  src: 'assets/character-walk.webp',   // ← REPLACE with your own sprite sheet / PNG
+  frames: 24,                          // frames laid out left → right
+  aspect: 393 / 1177,                  // one frame's width / height
+  ground: 0.9592,                      // average floor line (fraction of frame height)
+  // lowest foot in each frame — the reflection mirrors about this so it always touches his feet
+  contact: [0.9320, 0.9388, 0.9465, 0.9541, 0.9609, 0.9660, 0.9762, 0.9864, 0.9983, 0.9932, 0.9703, 0.9550,
+            0.9431, 0.9371, 0.9431, 0.9499, 0.9541, 0.9635, 0.9745, 0.9839, 0.9924, 0.9805, 0.9575, 0.9422],
+  strides: 10,                         // walk cycles over the whole scroll
+  strideLength: 460,                   // floor travel per cycle (px at his depth)
+};
+
+/* ════════════════════════════════════════════════════════════════════
+   TIMING — scroll progress (0 → 1) at which each phase starts / ends.
+   ════════════════════════════════════════════════════════════════════ */
+const T = {
+  titleOut:  [0.015, 0.10],  // opening headline leaves
+  orbit:     [0.00, 0.54],   // panels orbit the character
+  converge:  [0.30, 0.64],   // panels swing into the wall behind the hero (staggered)
+  push:      [0.60, 0.93],   // camera pushes into the hero image
+  heroCopy:  [0.84, 0.96],   // hero headline + buttons reveal
+  // 0.96 → 1.00 is the hold on the final frame
+};
+const ORBIT_SWEEP = 112;      // degrees the ring turns during the orbit phase
+const CHAPTERS = [0, 0.30, 0.60, 0.86];
+
+/* ════════════════════════════════════════════════════════════════════
+   Implementation
+   ════════════════════════════════════════════════════════════════════ */
+gsap.registerPlugin(ScrollTrigger);
+
+const $ = id => document.getElementById(id);
+const scene = $('scene'), heroEl = $('hero'), character = $('character'), heroOverlay = $('heroOverlay');
+const floorCanvas = $('floorCanvas'), fctx = floorCanvas.getContext('2d');
+const O = { x: 0, y: 0 };   // camera vanishing point on screen (px), updated each frame
+const PERSPECTIVE = 1100, ORIGIN_Y = 0.42;
+
+const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
+const lerp = (a, b, t) => a + (b - a) * t;
+const range = (p, [a, b]) => clamp((p - a) / (b - a));
+const smooth = (a, b, v) => { const t = clamp((v - a) / (b - a)); return t * t * (3 - 2 * t); };
+const ease = {
+  inOut: t => t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2,
+  sine: t => -(Math.cos(Math.PI * t) - 1) / 2,
+  out: t => 1 - Math.pow(1 - t, 4),
+  expo: t => t === 1 ? 1 : 1 - Math.pow(2, -10 * t),
+};
+const DEG = Math.PI / 180;
+
+// ── build panel elements ──
+const panels = PANELS.map((cfg, i) => {
+  const el = document.createElement('div');
+  el.className = 'card';
+  el.innerHTML = `<img src="${cfg.src}" alt="" draggable="false"><div class="sheen"></div>`;
+  scene.insertBefore(el, heroEl);
+  return {
+    cfg, el, i,
+    vis: true,
+    tier: [0, -1, 1][i % 3],                                // mid / top / low ring
+    rad: [1.0, 1.32, 0.94, 1.5, 1.14, 1.4][i % 6],          // distance from character
+    size: [1.0, 0.9, 1.1, 0.85, 1.05, 0.95][(i + 2) % 6],
+    phase: i * 1.7,                                         // idle float offset
+  };
+});
+const heroImg = heroEl.querySelector('img');
+
+// ── layout (depends on viewport) ──
+let L = {}, active = [];
+function measure() {
+  const vw = innerWidth, vh = innerHeight, mobile = vw < 720;
+  active = panels.filter(p => !mobile || p.cfg.mobile);
+  const n = active.length;
+
+  const R = mobile ? vw * 0.9 : Math.min(vw * 0.42, 760);
+  const baseH = mobile ? clamp(vh * 0.16, 110, 160) : clamp(vh * 0.25, 150, 270);
+  const cols = mobile ? 4 : 6;
+  const wallR = 2.3, colDeg = mobile ? 17 : 15;
+  const chord = 2 * wallR * R * Math.sin(colDeg / 2 * DEG);   // slot spacing on the wall (world px)
+
+  L = {
+    vw, vh, mobile, R, baseH, cols, wallR, colDeg,
+    charZ: 220,
+    tierY: mobile ? [-0.05, -0.28, 0.13] : [-0.07, -0.34, 0.19], // mid, top, low (× vh)
+    wallH: chord * 0.52,
+    rowGap: chord * 0.62,
+    wallY: -0.07 * vh,
+    heroW: Math.min(chord * 2.5, chord * 1.5 * vw / vh),   // screen-shaped card, never taller than 1.5 slots
+    heroR: wallR - 0.4,
+  };
+  L.heroH = L.heroW / (1440 / 762);
+  Object.assign(heroEl.style, { width: `${vw}px`, height: `${vh}px`, marginLeft: `${-vw / 2}px`, marginTop: `${-vh / 2}px` });
+  L.heroStartR = 3.4;
+  L.dolly = L.charZ + L.heroR * R * 0.92;                     // distance the camera travels to reach the hero
+
+  // floor height: put the plane exactly under his feet at his depth
+  character.style.marginBottom = `${(-(1 - CHARACTER.ground) * character.offsetHeight).toFixed(1)}px`;
+  const feetY = character.offsetTop + character.offsetHeight * CHARACTER.ground;  // ground line, px from top of the stage
+  const sAtChar = PERSPECTIVE / (PERSPECTIVE + L.charZ);
+  L.floorY = (feetY - ORIGIN_Y * vh) / sAtChar - (0.5 - ORIGIN_Y) * vh;
+  // floor canvas at 1× — its lines and glows are soft, so extra resolution only costs time
+  L.dpr = 1;
+  floorCanvas.width = Math.round(vw * L.dpr);
+  floorCanvas.height = Math.round(vh * L.dpr);
+  lastFloorKey = '';
+  sizeFigureCanvas();
+
+  const span = mobile ? 300 : 320;
+  active.forEach((p, k) => {
+    p.a0 = -96 + k * (span / n) + ((k * 37) % 7 - 3);
+    p.h = baseH * p.size;
+    p.w = p.h * p.cfg.aspect;
+    p.el.style.display = '';
+    p.el.style.width = `${p.w}px`;
+    p.el.style.height = `${p.h}px`;
+    p.el.style.marginLeft = `${-p.w / 2}px`;
+    p.el.style.marginTop = `${-p.h / 2}px`;
+  });
+  panels.filter(p => !active.includes(p)).forEach(p => (p.el.style.display = 'none'));
+
+  // wall slots: cols × 3 rows on a curved arc, minus the two centre slots (the hero sits there)
+  const slots = [];
+  for (let c = 0; c < cols; c++) for (let r = 0; r < 3; r++) {
+    const centre = r === 1 && (c === cols / 2 - 1 || c === cols / 2);
+    if (!centre) slots.push({ a: (c - (cols - 1) / 2) * colDeg, row: r - 1 });
+  }
+  const phiAtConverge = -ORBIT_SWEEP * ease.sine(range(T.converge[0] + 0.08, T.orbit));
+  const byAngle = [...active].sort((a, b) => (a.a0 + phiAtConverge) - (b.a0 + phiAtConverge));
+  slots.sort((a, b) => a.a - b.a || a.row - b.row);
+  byAngle.forEach((p, k) => (p.slot = slots[k]));
+  active.forEach(p => (p.stagger = (byAngle.indexOf(p) / n) * 0.07));
+}
+
+function place(angleDeg, r, y) {
+  const a = angleDeg * DEG;
+  return { x: Math.sin(a) * r * L.R, y, z: -L.charZ - Math.cos(a) * r * L.R * 0.92 };
+}
+// camera space → screen: offset from the element's centred anchor + scale factor
+function project(x, y, z) {
+  const k = PERSPECTIVE / (PERSPECTIVE - Math.min(z, PERSPECTIVE - 60));
+  return {
+    dx: (L.vw * 0.5 + x - O.x) * k + O.x - L.vw * 0.5,
+    dy: (L.vh * 0.5 + y - O.y) * k + O.y - L.vh * 0.5,
+    k,
+  };
+}
+// camera travel during the push. Solved so the hero's on-screen size grows geometrically
+// (an even zoom rate) instead of exploding at the end, as raw perspective would.
+function dollyAt(p) {
+  const e = ease.inOut(range(p, T.push));
+  if (e <= 0) return 0;
+  const zW = -L.charZ - L.heroR * L.R * 0.92;                  // hero's depth in the wall
+  const s0 = L.heroW / L.vw, s = lerp(L.heroW, L.vw, e) / L.vw;
+  const A0 = PERSPECTIVE / (PERSPECTIVE - zW) * s0;             // starting on-screen scale
+  const k = Math.pow(A0, 1 - e) / s;                           // perspective factor needed now
+  return (PERSPECTIVE - PERSPECTIVE / k) - zW;
+}
+const visible = angle => 1 - smooth(98, 126, Math.abs(angle));
+const nearFade = (z, push) => 1 - smooth(lerp(180, -520, push), lerp(420, -160, push), z);
+
+// ── per-frame render ──
+let introK = 0, time = 0;
+const mouse = { x: 0, y: 0, tx: 0, ty: 0 };
+
+function renderPanels(p) {
+  const orbit = ease.sine(range(p, T.orbit));
+  const phi = -ORBIT_SWEEP * orbit;
+  const pushT = range(p, T.push);
+  const dolly = dollyAt(p);
+
+  active.forEach((pn, k) => {
+    const c = ease.inOut(clamp(range(p, T.converge) * 1.15 - pn.stagger * 2.2));
+    const oA = pn.a0 + phi;
+    const oR = pn.rad * lerp(1, 0.86, orbit);
+    const oY = L.tierY[[0, -1, 1].indexOf(pn.tier)] * L.vh;
+    const float = Math.sin(time * 0.7 + pn.phase) * 6 * (1 - c);      // breathes while idle
+
+    const angle = lerp(oA, pn.slot.a, c);
+    const r = lerp(oR, L.wallR, c);
+    const y = lerp(oY, L.wallY + pn.slot.row * L.rowGap, c) + float;
+    const s = lerp(1, L.wallH / pn.h, c);
+    const pos = place(angle, r, y);
+    pos.z += dolly;
+
+    const ry = clamp(lerp(-oA * 0.82, -pn.slot.a, c), -78, 78) + Math.sin(time * 0.5 + pn.phase) * 0.8 * (1 - c);
+    const k0 = clamp(introK * 1.8 - k * 0.05);
+    const depth = clamp((-pos.z - 500) / 2600, 0, 0.62);   // farther = darker (via opacity over the dark stage)
+    const op = visible(angle) * nearFade(pos.z, pushT) * k0 * (1 - depth * 0.8);
+
+    const pr = project(pos.x, pos.y + (1 - ease.out(k0)) * 60, pos.z);
+    pn.z = pos.z;
+    const st = pn.el.style;
+    st.transform = `translate3d(${pr.dx.toFixed(2)}px,${pr.dy.toFixed(2)}px,0) scale(${(pr.k * s).toFixed(5)}) perspective(${(PERSPECTIVE - Math.min(pos.z, 900)).toFixed(0)}px) rotateY(${(ry * 0.6).toFixed(2)}deg)`;
+    st.opacity = op.toFixed(3);
+    const vis = op > 0.005;
+    if (vis !== pn.vis) { st.visibility = vis ? 'visible' : 'hidden'; pn.vis = vis; }
+  });
+}
+
+// far → near stacking, rewritten only when the order actually changes
+const stackItems = [];
+let lastOrder = '';
+function restack() {
+  stackItems.sort((a, b) => a.z - b.z);
+  const order = stackItems.map(it => it.i).join(',');
+  if (order === lastOrder) return;
+  lastOrder = order;
+  stackItems.forEach((it, idx) => (it.el.style.zIndex = idx + 1));
+}
+
+function renderHero(p) {
+  const approach = ease.sine(range(p, [0, T.converge[1]]));
+  const push = ease.inOut(range(p, T.push));
+  const r = lerp(L.heroStartR, L.heroR, approach);
+  const pos = place(0, r, lerp(L.wallY - L.vh * 0.02, L.wallY, approach));
+  const z = pos.z + dollyAt(p);
+  // the card is the screen's shape, uniformly scaled: at z = 0 and s = 1 it is exactly the viewport
+  const s = lerp(L.heroW, L.vw, push) / L.vw;
+  const y = lerp(pos.y, 0, push);
+
+  const pr = project(0, y, z);
+  heroItem.z = z;
+  const st = heroEl.style;
+  st.transform = `translate3d(${pr.dx.toFixed(2)}px,${pr.dy.toFixed(2)}px,0) scale(${(pr.k * s).toFixed(5)})`;
+  const full = push > 0.985;
+  if (full !== heroEl._full) { heroEl.classList.toggle('is-full', full); heroEl._full = full; }
+  const lit = lerp(0.5, 1, ease.out(range(p, [0.2, T.push[0] + 0.1])));
+  st.opacity = (lerp(0.55, 1, approach) * lit * clamp(introK * 1.4)).toFixed(3);
+  // the headline layer fades in over the last stretch of the push
+  const ov = smooth(0.7, 1, range(p, T.push));
+  heroOverlay.style.opacity = ov.toFixed(3);
+  const ovVis = ov > 0.001;
+  if (ovVis !== heroOverlay._vis) { heroOverlay.style.visibility = ovVis ? 'visible' : 'hidden'; heroOverlay._vis = ovVis; }
+  // slow push-in on the photo itself (Ken Burns) through the reveal and hold
+  const kb = ease.out(range(p, [T.push[0], 1]));
+  heroImg.style.transform = `scale(${lerp(1.14, 1.02, kb).toFixed(4)}) translate3d(${(mouse.x * -6).toFixed(2)}px,${(mouse.y * -4).toFixed(2)}px,0)`;
+}
+
+// masked line reveals
+const heroLines = [...heroOverlay.querySelectorAll('.line > span')];
+const titleLines = [...$('introTitle').querySelectorAll('.line > span')];
+const heroCta = $('heroCta'), scrollCue = $('scrollCue');
+function renderCopy(p) {
+  const h = range(p, T.heroCopy);
+  heroLines.forEach((s, i) => {
+    const t = ease.out(clamp(h * 1.7 - i * 0.12));
+    s.style.transform = `translate3d(0,${((1 - t) * 115).toFixed(2)}%,0)`;
+  });
+  const live = h > 0.9;
+  if (live !== heroCta._live) { heroCta.classList.toggle('is-live', live); heroCta._live = live; }
+  const out = ease.inOut(range(p, T.titleOut));
+  titleLines.forEach((s, i) => {
+    const tin = ease.expo(clamp(introK * 1.4 - i * 0.12));
+    const tout = clamp(out * 1.3 - i * 0.1);
+    s.style.transform = `translate3d(0,${((1 - tin) * 110 - tout * 110).toFixed(2)}%,0)`;
+  });
+  scrollCue.style.opacity = (clamp(introK * 2 - 1) * (1 - range(p, [0, 0.04]))).toFixed(3);
+}
+
+// walking character (drawn on a small canvas: current frame + its reflection) + the floor
+const figCanvas = $('figureCanvas'), gctx = figCanvas.getContext('2d');
+character.style.setProperty('--aspect', CHARACTER.aspect);
+character.style.setProperty('--ground', `${CHARACTER.ground * 100}%`);
+if (!SHOW_PERSON) character.style.visibility = 'hidden';   // kept in layout only to position the floor
+const sheet = new Image();
+if (SHOW_PERSON) { sheet.onload = () => (lastFrame = -1); sheet.src = CHARACTER.src; }
+const REFLECT = 0.6;          // the canvas reaches 60% of his height below his box, for the reflection
+let lastFrame = -1;
+function sizeFigureCanvas() {
+  if (!SHOW_PERSON) return;
+  const d = Math.min(devicePixelRatio || 1, 2);
+  figCanvas.width = Math.round(character.offsetWidth * d);
+  figCanvas.height = Math.round(character.offsetHeight * (1 + REFLECT) * d);
+  lastFrame = -1;
+}
+function drawFigure(frame) {
+  if (!sheet.complete || !sheet.naturalWidth) return false;
+  const c = gctx, W = figCanvas.width, H = figCanvas.height / (1 + REFLECT);
+  const fw = sheet.naturalWidth / CHARACTER.frames, fh = sheet.naturalHeight;
+  c.setTransform(1, 0, 0, 1, 0, 0);
+  c.globalCompositeOperation = 'source-over';
+  c.clearRect(0, 0, W, figCanvas.height);
+  c.drawImage(sheet, frame * fw, 0, fw, fh, 0, 0, W, H);
+  // reflection: mirrored about this frame's foot-contact line, slightly stretched, faded with distance
+  const yc = (CHARACTER.contact ? CHARACTER.contact[frame] : CHARACTER.ground) * H;
+  c.save();
+  c.globalAlpha = 0.55;
+  c.translate(0, yc); c.scale(1, -1.15); c.translate(0, -yc);
+  c.drawImage(sheet, frame * fw, 0, fw, fh, 0, 0, W, H);
+  c.restore();
+  c.globalCompositeOperation = 'destination-out';
+  const g = c.createLinearGradient(0, yc, 0, yc + H * 0.4);
+  g.addColorStop(0, 'rgba(0,0,0,0.1)'); g.addColorStop(1, 'rgba(0,0,0,1)');
+  c.fillStyle = g; c.fillRect(0, yc, W, figCanvas.height - yc);
+  c.globalCompositeOperation = 'source-over';
+  return true;
+}
+function renderCharacter(p) {
+  const push = ease.inOut(range(p, T.push));
+  const walkP = Math.min(p, 0.93) * CHARACTER.strides;     // stride follows the scroll; rests at the end
+  if (SHOW_PERSON) {
+    // he walks on into the light and dissolves as the camera pushes past him
+    const gone = smooth(0.1, 0.5, range(p, T.push));
+    const scale = lerp(1, 0.72, gone);
+    const rise = lerp(0, -5, gone);                        // vh — feet move up toward the horizon as he recedes
+    const frame = Math.floor((walkP % 1) * CHARACTER.frames) % CHARACTER.frames;
+    if (frame !== lastFrame && drawFigure(frame)) lastFrame = frame;
+    character.style.transform =
+      `translateX(-50%) translate3d(${(mouse.x * -5).toFixed(2)}px,${rise.toFixed(2)}vh,0) scale(${scale.toFixed(4)})`;
+    character.style.opacity = (clamp(introK * 2) * (1 - gone)).toFixed(3);
+    const cv = gone < 0.999;
+    if (cv !== character._vis) { character.style.visibility = cv ? 'visible' : 'hidden'; character._vis = cv; }
+  }
+  // the corridor light, the floor (grid slides toward the camera with the walk) and the vignette
+  drawScene(p, walkP * CHARACTER.strideLength, dollyAt(p), clamp(introK * 1.5) * (1 - smooth(0.3, 0.85, push)));
+}
+
+// ── scene canvas: corridor light + floor + vignette (redrawn only when something changed) ──
+const FLOOR = { near: 150, far: -3400, halfW: 1000, colGap: 200, rowGap: 240 };
+let lastFloorKey = '';
+// soft elliptical light: radial gradient in a unit circle, stretched to (rx, ry)
+function softEllipse(c, cx, cy, rx, ry, color, stop = 0.7) {
+  c.save(); c.translate(cx, cy); c.scale(rx, ry);
+  const g = c.createRadialGradient(0, 0, 0, 0, 0, 1);
+  g.addColorStop(0, color); g.addColorStop(stop, 'rgba(0,0,0,0)');
+  c.fillStyle = g; c.fillRect(-1, -1, 2, 2);
+  c.restore();
+}
+function drawScene(p, travel, dolly, alpha) {
+  const push = ease.inOut(range(p, T.push));
+  const conv = ease.inOut(range(p, T.converge));
+  const beamA = clamp(introK * 1.5) * lerp(0.75, 1, conv) * (1 - smooth(0.2, 0.7, push));
+  const key = `${travel.toFixed(1)}|${dolly.toFixed(1)}|${alpha.toFixed(3)}|${beamA.toFixed(3)}|${conv.toFixed(3)}|${O.x.toFixed(1)}|${O.y.toFixed(1)}`;
+  if (key === lastFloorKey) return;
+  lastFloorKey = key;
+  const c = fctx, d = L.dpr, vw = L.vw, vh = L.vh;
+  c.setTransform(1, 0, 0, 1, 0, 0);
+  c.clearRect(0, 0, floorCanvas.width, floorCanvas.height);
+  c.setTransform(d, 0, 0, d, 0, 0);
+
+  // the light at the end of the corridor — grows as the panels converge, then hands over to the hero
+  if (beamA > 0.003) {
+    const bx = vw * 0.5 + mouse.x * -8, by = vh * ORIGIN_Y + L.wallY * 0.35, k = lerp(1, 1.35, conv);
+    c.globalAlpha = beamA;
+    softEllipse(c, bx, by, 0.041 * vw * k, 0.077 * vh * k, 'rgba(255, 238, 228, .55)');
+    softEllipse(c, bx, by, 0.101 * vw * k, 0.176 * vh * k, 'rgba(255, 150, 140, .18)', 0.72);
+    softEllipse(c, bx, by, 0.032 * vw * k, 0.55 * vh * k, 'rgba(255, 210, 200, .07)');
+    const fl = c.createLinearGradient(bx - 0.35 * vw * k, 0, bx + 0.35 * vw * k, 0);
+    fl.addColorStop(0, 'rgba(255,200,190,0)'); fl.addColorStop(0.5, 'rgba(255,200,190,.22)'); fl.addColorStop(1, 'rgba(255,200,190,0)');
+    c.fillStyle = fl; c.fillRect(bx - 0.35 * vw * k, by - 1, 0.7 * vw * k, 2);
+  }
+  if (alpha < 0.005) { drawVignette(c); return; }
+  c.globalAlpha = alpha;
+  const pt = (x, z) => { const p = project(x, L.floorY, z + dolly); return [L.vw / 2 + p.dx, L.vh / 2 + p.dy]; };
+  const nearZ = Math.min(FLOOR.near, PERSPECTIVE - 80 - dolly);   // never cross the camera plane
+  const fade = z => smooth(FLOOR.far, FLOOR.far + 1500, z);       // fade into the dark at the far end
+  c.lineWidth = 1;
+
+  // lines running away from the camera
+  for (let x = -FLOOR.halfW; x <= FLOOR.halfW + 1; x += FLOOR.colGap) {
+    const side = 1 - smooth(FLOOR.halfW * 0.45, FLOOR.halfW, Math.abs(x));
+    if (side <= 0) continue;
+    const [x1, y1] = pt(x, nearZ), [x2, y2] = pt(x, FLOOR.far);
+    const g = c.createLinearGradient(x1, y1, x2, y2);
+    g.addColorStop(0, `rgba(255,255,255,${0.07 * side})`);
+    g.addColorStop(0.55, `rgba(255,255,255,${0.05 * side})`);
+    g.addColorStop(1, 'rgba(255,255,255,0)');
+    c.strokeStyle = g;
+    c.beginPath(); c.moveTo(x1, y1); c.lineTo(x2, y2); c.stroke();
+  }
+  // cross lines sliding toward the camera with his stride
+  const off = travel % FLOOR.rowGap;
+  for (let z = FLOOR.far + off; z <= nearZ; z += FLOOR.rowGap) {
+    const a = 0.06 * fade(z);
+    if (a < 0.003) continue;
+    const [x1, y1] = pt(-FLOOR.halfW, z), [x2, y2] = pt(FLOOR.halfW, z);
+    const g = c.createLinearGradient(x1, y1, x2, y2);
+    g.addColorStop(0, 'rgba(255,255,255,0)');
+    g.addColorStop(0.3, `rgba(255,255,255,${a})`);
+    g.addColorStop(0.7, `rgba(255,255,255,${a})`);
+    g.addColorStop(1, 'rgba(255,255,255,0)');
+    c.strokeStyle = g;
+    c.beginPath(); c.moveTo(x1, y1); c.lineTo(x2, y2); c.stroke();
+  }
+  // light pools: under his feet, and the long reflection of the light at the end of the corridor
+  const glow = (x, z, rx, color, flatten) => {
+    const [cx, cy] = pt(x, z), k = project(0, 0, z + dolly).k;
+    c.save(); c.translate(cx, cy); c.scale(1, flatten);
+    const g = c.createRadialGradient(0, 0, 0, 0, 0, rx * k);
+    g.addColorStop(0, color); g.addColorStop(1, 'rgba(0,0,0,0)');
+    c.fillStyle = g; c.beginPath(); c.arc(0, 0, rx * k, 0, Math.PI * 2); c.fill();
+    c.restore();
+  };
+  if (SHOW_PERSON) {                                             // pool of light at his feet
+    glow(0, -L.charZ, 230, 'rgba(255, 220, 205, 0.16)', 0.28);
+    glow(0, -L.charZ, 520, 'rgba(255, 150, 140, 0.06)', 0.3);
+  }
+  const [sx1, sy1] = pt(0, FLOOR.far), [sx2, sy2] = pt(0, -L.charZ - 200);
+  const sg = c.createLinearGradient(sx1, sy1, sx2, sy2);
+  sg.addColorStop(0, 'rgba(255, 215, 205, 0.12)'); sg.addColorStop(1, 'rgba(255, 215, 205, 0)');
+  c.fillStyle = sg;
+  // soft-edged streak: a few nested, faint trapezoids instead of a (slow) blur filter
+  for (const [wf, wn, a] of [[30, 70, 0.5], [60, 130, 0.35], [100, 200, 0.2]]) {
+    const [ax, ay] = pt(-wf, FLOOR.far), [bx, by] = pt(wf, FLOOR.far), [cx2, cy2] = pt(wn, -L.charZ - 200), [dx2, dy2] = pt(-wn, -L.charZ - 200);
+    c.globalAlpha = alpha * a;
+    c.beginPath(); c.moveTo(ax, ay); c.lineTo(bx, by); c.lineTo(cx2, cy2); c.lineTo(dx2, dy2); c.closePath(); c.fill();
+  }
+  drawVignette(c);
+}
+function drawVignette(c) {   // darkened edges (was a separate full-screen layer)
+  c.globalAlpha = 1;
+  c.save(); c.translate(L.vw * 0.5, L.vh * 0.45); c.scale(L.vw * 1.2, L.vh * 0.9);
+  const g = c.createRadialGradient(0, 0, 0, 0, 0, 1);
+  g.addColorStop(0.55, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(0,0,0,.7)');
+  c.fillStyle = g; c.fillRect(-1, -1, 2, 2);
+  c.restore();
+}
+
+// atmosphere, camera, HUD
+const aurora = $('aurora'), bar = $('progressBar'), num = $('progressNum');
+const chapterEls = [...$('chapters').children];
+let lastCh = -1;
+function renderWorld(p) {
+  const push = ease.inOut(range(p, T.push));
+  const drift = Math.sin(p * Math.PI * 1.5) * (1 - push);
+  const ox = 50 + drift * 2.5 + mouse.x * 1.6 * (1 - push);
+  const oy = (ORIGIN_Y * 100) - drift * 1.5 + mouse.y * 1.1 * (1 - push);
+  O.x = ox / 100 * L.vw; O.y = oy / 100 * L.vh;
+  aurora.style.transform = `translate3d(${(mouse.x * 10).toFixed(1)}px,${(p * 6).toFixed(2)}vh,0)`;
+  aurora.style.opacity = (0.38 * (1 - push)).toFixed(3);
+  bar.style.transform = `scaleX(${p.toFixed(4)})`;
+  const n = String(Math.round(p * 100)).padStart(2, '0');
+  if (n !== num._v) { num.textContent = n; num._v = n; }
+  let ch = 0; CHAPTERS.forEach((c, i) => { if (p >= c) ch = i; });
+  if (ch !== lastCh) { chapterEls.forEach((li, i) => li.classList.toggle('is-active', i === ch)); lastCh = ch; }
+}
+
+const state = { p: 0 };
+function render() {
+  const p = state.p;
+  renderWorld(p);
+  renderPanels(p);
+  renderHero(p);
+  restack();
+  renderCopy(p);
+  renderCharacter(p);
+}
+
+// ── smooth scroll (Lenis) + scroll-linked progress ──
+const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+let lenis = null;
+if (window.Lenis && !reduceMotion) {
+  lenis = new Lenis({ lerp: 0.08, wheelMultiplier: 0.9, smoothWheel: true });
+  lenis.on('scroll', ScrollTrigger.update);
+  gsap.ticker.add(t => lenis.raf(t * 1000));
+  gsap.ticker.lagSmoothing(0);
+}
+document.querySelectorAll('a[href^="#"]').forEach(a => a.addEventListener('click', e => {
+  const target = document.querySelector(a.getAttribute('href'));
+  if (!target) return;
+  e.preventDefault();
+  lenis ? lenis.scrollTo(target, { duration: 2.2 }) : target.scrollIntoView({ behavior: 'smooth' });
+}));
+
+measure();
+const heroItem = { el: heroEl, i: 'h', z: -1e4 };
+function rebuildStack() { stackItems.length = 0; active.forEach(pn => stackItems.push(Object.assign(pn, { z: pn.z ?? -1e4 }))); stackItems.push(heroItem); lastOrder = ''; }
+rebuildStack();
+render();
+
+gsap.to(state, {
+  p: 1,
+  ease: 'none',
+  scrollTrigger: {
+    trigger: '#intro',
+    start: 'top top',
+    end: 'bottom bottom',
+    scrub: true,           // locked to the (already Lenis-smoothed) scroll position
+    invalidateOnRefresh: true,
+  },
+});
+
+// one render loop: scroll state + idle float + cursor parallax
+addEventListener('pointermove', e => {
+  mouse.tx = (e.clientX / innerWidth) * 2 - 1;
+  mouse.ty = (e.clientY / innerHeight) * 2 - 1;
+}, { passive: true });
+let stageOn = true, lastKey = '';
+new IntersectionObserver(([e]) => (stageOn = e.isIntersecting)).observe($('intro'));
+gsap.ticker.add(t => {
+  time = t;
+  if (!reduceMotion) { mouse.x += (mouse.tx - mouse.x) * 0.05; mouse.y += (mouse.ty - mouse.y) * 0.05; }
+  if (!stageOn) return;                                         // intro scrolled away: no work at all
+  // panels breathe until they lock into the wall; after that, redraw only on change
+  const floating = !reduceMotion && state.p < T.converge[1] + 0.02;
+  const key = `${state.p.toFixed(5)}|${mouse.x.toFixed(4)}|${mouse.y.toFixed(4)}|${introK.toFixed(4)}`;
+  if (!floating && key === lastKey) return;
+  lastKey = key;
+  render();
+});
+
+addEventListener('resize', () => { measure(); rebuildStack(); render(); });
+
+// ── after-intro reveals ──
+gsap.utils.toArray('.reveal').forEach((el, i) => {
+  gsap.from(el, {
+    y: 70, opacity: 0, duration: 1.4, ease: 'expo.out', delay: (i % 3) * 0.08, force3D: false,
+    scrollTrigger: { trigger: el, start: 'top 88%', toggleActions: 'play none none reverse' },
+  });
+});
+
+// ── preloader: count up, then open onto the stage ──
+const imgs = [...document.images];
+if (SHOW_PERSON) imgs.push(sheet);
+let loaded = 0;
+const shown = { v: 0 };
+const loadCount = $('loadCount'), loadBar = $('loadBar');
+const paint = () => { loadCount.textContent = String(Math.round(shown.v)).padStart(3, '0'); loadBar.style.transform = `scaleX(${shown.v / 100})`; };
+const bump = () => void gsap.to(shown, { v: (++loaded / imgs.length) * 100, duration: 0.6, ease: 'power2.out', onUpdate: paint, overwrite: true });
+Promise.all(imgs.map(img => (img.complete ? Promise.resolve() : new Promise(r => { img.onload = img.onerror = r; })).then(bump)))
+  .then(() => {
+    gsap.timeline()
+      .to(shown, { v: 100, duration: 0.5, ease: 'power2.out', onUpdate: paint, overwrite: true })
+      .to('#loader', { clipPath: 'inset(0 0 100% 0)', duration: 1.3, ease: 'expo.inOut' }, '+=0.15')
+      .set('#loader', { display: 'none' })
+      .to({ k: 0 }, { k: 1, duration: 2.6, ease: 'power3.out', onUpdate() { introK = this.targets()[0].k; } }, '-=0.75');
+  });
+</script>
+</body>
+</html>
